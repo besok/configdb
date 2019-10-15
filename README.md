@@ -1,4 +1,4 @@
-## configDB
+## cfgdb
 
 distributed kv database to store configuration files.
 
