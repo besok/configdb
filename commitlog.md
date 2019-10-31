@@ -18,14 +18,14 @@ A group of records in binary format
 
 | Timestamp     | description     | size in bits |
 | :------------ |:---------------:| ------------:|
-| timestamp     | data coming     | 64           |
+| timestamp     | data coming     | 128           |
 | op type       | ins/del/lock    | 4            |
-| key length    | < 1mb           | 28           | 
+| key length    | < 1mb           | 32           | 
 | value length  | < 1gb           | 32           |  
 | key bytes     | ~               | ~            |
 | value bytes   | ~               | ~            |
                   
-The length of header is 64b + 4b + 28b + 32b ~ 128b ~ 16 bytes
+The length of header is 128b + 4b + 32b + 32b ~ 196b 
 
 ##### Commitlog.index
 A group of values in binary format

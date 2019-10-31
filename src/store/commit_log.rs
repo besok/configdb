@@ -1,18 +1,120 @@
 use std::convert::TryInto;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 static INDEX_FILE_NAME: &str = "commit_log.idx";
 
 struct IndexFile {
     path: String,
 }
+
 /// default record for index file for commit log.
 /// It consists of ints(u32) meaning the length of record in commit log
 pub struct Index {
     val: u32
 }
 
+pub enum RecordType {
+    Insert,
+    Delete,
+    Lock,
+}
+
+pub struct Record {
+    timestamp: u128,
+    operation: RecordType,
+    key_len: u32,
+    val_len: u32,
+    key: Box<[u8]>,
+    val: Box<[u8]>,
+}
+
+fn time_now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards").as_millis()
+}
+
+fn find<T>(slice:&[u8],) -> T
+    where T: Sized {
+
+}
+
+impl Record {
+    pub fn from_bytes(bytes: &Vec<u8>) -> Result<Record, LogError> {
+        if bytes.is_empty() {
+            return Err(LogError("bytes should not be empty"));
+        }
+
+        let operation: RecordType = match bytes.get(0) {
+            Some(1) => RecordType::Insert,
+            Some(2) => RecordType::Delete,
+            Some(3) => RecordType::Lock,
+            _ => panic!("the first byte should be either 1 or 2 or 3")
+        };
+
+        let mut ts_array = [0; 16];
+        ts_array.copy_from_slice(&bytes[1..17]);
+        let timestamp = u128::from_be_bytes(ts_array);
+
+        Ok(Record {
+            timestamp,
+            operation,
+            key_len: 0,
+            val_len: 0,
+            key: Box::new([]),
+            val: Box::new([]),
+        })
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let op: u8 =
+            match self.operation {
+                RecordType::Insert => 1,
+                RecordType::Delete => 2,
+                RecordType::Lock => 3,
+            };
+
+
+        let mut bytes = vec![op];
+        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
+        bytes.extend_from_slice(&self.key_len.to_be_bytes());
+        bytes.extend_from_slice(&self.val_len.to_be_bytes());
+        bytes.extend_from_slice(&self.key);
+        bytes.extend_from_slice(&self.val);
+
+        bytes
+    }
+
+    pub fn size_in_bytes(&self) -> u32 {
+        self.val_len + self.key_len + 16 + 4 + 4 + 1
+    }
+
+    pub fn insert_record(key: Box<[u8]>, val: Box<[u8]>) -> Self {
+        Record::op_from(RecordType::Insert, key, val)
+    }
+    pub fn delete_record(key: Box<[u8]>, val: Box<[u8]>) -> Self {
+        Record::op_from(RecordType::Delete, key, val)
+    }
+    pub fn lock_record(key: Box<[u8]>, val: Box<[u8]>) -> Self {
+        Record::op_from(RecordType::Lock, key, val)
+    }
+
+
+    fn op_from(op: RecordType, key: Box<[u8]>, val: Box<[u8]>) -> Self {
+        Record {
+            timestamp: time_now_millis(),
+            operation: op,
+            key_len: key.len() as u32,
+            val_len: val.len() as u32,
+            key,
+            val,
+        }
+    }
+}
+
+
 #[derive(Debug, Clone)]
-struct IndexError(&'static str);
+pub struct LogError(&'static str);
 
 impl PartialEq for Index {
     fn eq(&self, other: &Self) -> bool {
@@ -36,7 +138,7 @@ impl Index {
         return Box::new(res);
     }
 
-    fn from_bytes_array(bytes: &[u8]) -> Result<std::vec::Vec<Index>, IndexError> {
+    fn from_bytes_array(bytes: &[u8]) -> Result<std::vec::Vec<Index>, LogError> {
         Ok(
             bytes
                 .chunks(4)
@@ -63,7 +165,9 @@ impl Index {
 #[cfg(test)]
 mod tests {
     use crate::store::commit_log::Index;
-    use std::borrow::Borrow;
+
+    #[test]
+    fn quick_test() {}
 
     #[test]
     fn index_test() {
