@@ -34,9 +34,15 @@ fn time_now_millis() -> u128 {
         .expect("Time went backwards").as_millis()
 }
 
-fn find<T>(slice:&[u8],) -> T
-    where T: Sized {
-
+fn convert_128(slice: &[u8]) -> u128 {
+    let mut ts_array = [0; 16];
+    ts_array.copy_from_slice(&slice[0..17]);
+    u128::from_be_bytes(ts_array)
+}
+fn convert_32(slice: &[u8]) -> u32 {
+    let mut ts_array = [0; 4];
+    ts_array.copy_from_slice(&slice[0..5]);
+    u32::from_be_bytes(ts_array)
 }
 
 impl Record {
@@ -52,9 +58,7 @@ impl Record {
             _ => panic!("the first byte should be either 1 or 2 or 3")
         };
 
-        let mut ts_array = [0; 16];
-        ts_array.copy_from_slice(&bytes[1..17]);
-        let timestamp = u128::from_be_bytes(ts_array);
+        let timestamp = convert_128(&bytes[1..17]);
 
         Ok(Record {
             timestamp,
