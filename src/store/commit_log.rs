@@ -3,50 +3,68 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static INDEX_FILE_NAME: &str = "commit_log.idx";
 
-struct IndexFile {
-    path: String,
-}
-
 /// default record for index file for commit log.
 /// It consists of ints(u32) meaning the length of record in commit log
+#[derive(PartialEq, Debug)]
 pub struct Index {
     val: u32
 }
 
+/// commit log type
+#[derive(PartialEq, Debug)]
 pub enum RecordType {
     Insert,
     Delete,
     Lock,
 }
 
+/// commit log record. This record saves the information before other operation for preventing data loss
+/// the header consists of ts(current time), op type RecordType, key length and val length
+#[derive(PartialEq, Debug)]
 pub struct Record {
     timestamp: u128,
     operation: RecordType,
     key_len: u32,
     val_len: u32,
-    key: Box<[u8]>,
-    val: Box<[u8]>,
+    key: Vec<u8>,
+    val: Vec<u8>,
 }
 
 fn time_now_millis() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards").as_millis()
+        .expect("Time went backwards")
+        .as_millis()
 }
 
 fn convert_128(slice: &[u8]) -> u128 {
     let mut ts_array = [0; 16];
-    ts_array.copy_from_slice(&slice[0..17]);
+    ts_array.copy_from_slice(&slice[0..16]);
     u128::from_be_bytes(ts_array)
 }
+
 fn convert_32(slice: &[u8]) -> u32 {
     let mut ts_array = [0; 4];
-    ts_array.copy_from_slice(&slice[0..5]);
+    ts_array.copy_from_slice(&slice[0..4]);
     u32::from_be_bytes(ts_array)
 }
 
 impl Record {
-    pub fn from_bytes(bytes: &Vec<u8>) -> Result<Record, LogError> {
+    /// deserializing op
+    /// # Arguments
+    /// * `bytes` - bytes array to deserialize
+    ///
+    /// # Order
+    /// - the first byte is operation see `RecordType`
+    /// - then 8 bytes is timestamp
+    /// - then 4 bytes is key length
+    /// - then 4 bytes is val length
+    /// - then key array
+    /// - then val array
+    ///
+    /// # Returns
+    /// `Result` with Record or `LogError`
+    pub fn from_bytes(bytes: &[u8]) -> Result<Record, LogError> {
         if bytes.is_empty() {
             return Err(LogError("bytes should not be empty"));
         }
@@ -59,17 +77,22 @@ impl Record {
         };
 
         let timestamp = convert_128(&bytes[1..17]);
+        let key_len = convert_32(&bytes[17..21]);
+        let val_len = convert_32(&bytes[21..25]);
+        let key = bytes[25..25 + key_len as usize].to_vec();
+        let val = bytes[25 + key_len as usize..].to_vec();
 
-        Ok(Record {
-            timestamp,
-            operation,
-            key_len: 0,
-            val_len: 0,
-            key: Box::new([]),
-            val: Box::new([]),
-        })
+        Ok(Record { timestamp, operation, key_len, val_len, key, val })
     }
 
+    /// serializing op
+    /// # Order
+    /// - the first byte is operation see `RecordType`
+    /// - then 8 bytes is timestamp
+    /// - then 4 bytes is key length
+    /// - then 4 bytes is val length
+    /// - then key array
+    /// - then val array
     pub fn to_bytes(&self) -> Vec<u8> {
         let op: u8 =
             match self.operation {
@@ -77,7 +100,6 @@ impl Record {
                 RecordType::Delete => 2,
                 RecordType::Lock => 3,
             };
-
 
         let mut bytes = vec![op];
         bytes.extend_from_slice(&self.timestamp.to_be_bytes());
@@ -89,25 +111,29 @@ impl Record {
         bytes
     }
 
+    /// size in bytes operation
+    /// it counts size of record
+    /// Generally it comes from header(16-ts,4 and 4 from key and value length , 1 op)
+    /// and bytes from key and val
     pub fn size_in_bytes(&self) -> u32 {
         self.val_len + self.key_len + 16 + 4 + 4 + 1
     }
 
-    pub fn insert_record(key: Box<[u8]>, val: Box<[u8]>) -> Self {
+    pub fn insert_record(key: Vec<u8>, val: Vec<u8>) -> Self {
         Record::op_from(RecordType::Insert, key, val)
     }
-    pub fn delete_record(key: Box<[u8]>, val: Box<[u8]>) -> Self {
+    pub fn delete_record(key: Vec<u8>, val: Vec<u8>) -> Self {
         Record::op_from(RecordType::Delete, key, val)
     }
-    pub fn lock_record(key: Box<[u8]>, val: Box<[u8]>) -> Self {
+    pub fn lock_record(key: Vec<u8>, val: Vec<u8>) -> Self {
         Record::op_from(RecordType::Lock, key, val)
     }
 
 
-    fn op_from(op: RecordType, key: Box<[u8]>, val: Box<[u8]>) -> Self {
+    fn op_from(operation: RecordType, key: Vec<u8>, val: Vec<u8>) -> Self {
         Record {
             timestamp: time_now_millis(),
-            operation: op,
+            operation,
             key_len: key.len() as u32,
             val_len: val.len() as u32,
             key,
@@ -120,19 +146,9 @@ impl Record {
 #[derive(Debug, Clone)]
 pub struct LogError(&'static str);
 
-impl PartialEq for Index {
-    fn eq(&self, other: &Self) -> bool {
-        self.val == other.val
-    }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.val != other.val
-    }
-}
-
-
 impl Index {
-    fn array_to_bytes(idx_array: &Vec<Index>) -> Box<Vec<u8>> {
+
+    pub fn array_to_bytes(idx_array: &Vec<Index>) -> Box<Vec<u8>> {
         let mut res: Vec<u8> = vec![];
 
         idx_array
@@ -142,7 +158,7 @@ impl Index {
         return Box::new(res);
     }
 
-    fn from_bytes_array(bytes: &[u8]) -> Result<std::vec::Vec<Index>, LogError> {
+    pub fn from_bytes_array(bytes: &[u8]) -> Result<std::vec::Vec<Index>, LogError> {
         Ok(
             bytes
                 .chunks(4)
@@ -151,27 +167,54 @@ impl Index {
         )
     }
 
-    fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
-        bytes.try_into().expect("expected an array with 4 bytes")
-    }
 
-    fn from_bytes(bytes: &[u8]) -> Index {
+    pub fn from_bytes(bytes: &[u8]) -> Index {
         let val = u32::from_be_bytes(*Index::convert_to_fixed(bytes));
         Index { val }
     }
 
-    fn to_bytes(&self) -> [u8; 4] {
+    pub fn to_bytes(&self) -> [u8; 4] {
         self.val.to_be_bytes()
     }
-}
 
+    fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
+        bytes.try_into().expect("expected an array with 4 bytes")
+    }
+
+}
 
 #[cfg(test)]
 mod tests {
-    use crate::store::commit_log::Index;
+    use crate::store::commit_log::{Index, Record, RecordType};
 
     #[test]
-    fn quick_test() {}
+    fn record_test() {
+        let k = [0; 10];
+        let v = [0; 15];
+
+        let rec = Record::insert_record(k.to_vec(), v.to_vec());
+        assert_eq!(rec.key_len, 10);
+        assert_eq!(rec.val_len, 15);
+        assert_eq!(rec.key, k.to_vec());
+        assert_eq!(rec.val, v.to_vec());
+        assert_eq!(rec.size_in_bytes(), 50);
+        assert_eq!(rec.operation, RecordType::Insert);
+
+        let rec = Record::delete_record(k.to_vec(), v.to_vec());
+        assert_eq!(rec.operation, RecordType::Delete);
+
+        let rec = Record::lock_record(k.to_vec(), v.to_vec());
+        assert_eq!(rec.operation, RecordType::Lock);
+
+        let vec = rec.to_bytes();
+        assert_eq!(vec.len(), rec.size_in_bytes() as usize);
+
+        if let Ok(rec_from_bt) = Record::from_bytes(&vec) {
+            assert_eq!(rec_from_bt, rec)
+        } else {
+            panic!("should be there")
+        }
+    }
 
     #[test]
     fn index_test() {
