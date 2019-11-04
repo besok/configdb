@@ -175,7 +175,7 @@ impl Index {
 
 
     pub fn from_bytes(bytes: &[u8]) -> Index {
-        let val = u32::from_be_bytes(*Index::convert_to_fixed(bytes));
+        let val = u32::from_be_bytes(convert_to_fixed(bytes));
         Index { val }
     }
 
@@ -183,10 +183,13 @@ impl Index {
         self.val.to_be_bytes()
     }
 
-    fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
-        bytes.try_into().expect("expected an array with 4 bytes")
-    }
+}
 
+fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
+    bytes.try_into().expect("expected an array with 4 bytes")
+}
+fn convert_from_fixed(bytes: &[u8;4]) -> &[u8] {
+    bytes.try_into().expect("expected an array with 4 bytes")
 }
 
 #[cfg(test)]
