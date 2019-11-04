@@ -10,15 +10,16 @@ fn read_slice_bytes_internal(from: u64, to: u64, file_size: u64, f: File) -> Res
     if from >= file_size || to > file_size || from >= to {
         return Err(Error::from(ErrorKind::InvalidInput));
     }
-
     let mut res: Vec<u8> = vec![];
-
     for (i, b_res) in f.bytes().into_iter().enumerate() {
         if i >= from as usize && i < to as usize {
             match b_res {
                 Ok(b) => res.push(b),
                 Err(err) => return Err(err),
             }
+        }
+        if i>= to as usize{
+            break;
         }
     };
     Ok(res)
