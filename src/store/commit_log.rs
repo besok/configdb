@@ -1,8 +1,6 @@
 use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-static INDEX_FILE_NAME: &str = "commit_log.idx";
-
 /// default record for index file for commit log.
 /// It consists of ints(u32) meaning the length of record in commit log
 #[derive(PartialEq, Debug)]
@@ -147,6 +145,14 @@ impl Record {
 pub struct LogError(&'static str);
 
 impl Index {
+
+    pub fn create(val :u32)->Index{
+        Index{ val }
+    }
+
+    pub fn get_value(&self)-> u32 {
+        self.val
+    }
 
     pub fn array_to_bytes(idx_array: &Vec<Index>) -> Box<Vec<u8>> {
         let mut res: Vec<u8> = vec![];

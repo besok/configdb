@@ -1,2 +1,4 @@
 pub mod commit_log;
-mod tests;
+pub mod store;
+
+
