@@ -34,18 +34,20 @@ fn time_now_millis() -> u128 {
         .expect("Time went backwards")
         .as_millis()
 }
-
 fn convert_128(slice: &[u8]) -> u128 {
     let mut ts_array = [0; 16];
     ts_array.copy_from_slice(&slice[0..16]);
     u128::from_be_bytes(ts_array)
 }
-
 fn convert_32(slice: &[u8]) -> u32 {
     let mut ts_array = [0; 4];
     ts_array.copy_from_slice(&slice[0..4]);
     u32::from_be_bytes(ts_array)
 }
+fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
+    bytes.try_into().expect("expected an array with 4 bytes")
+}
+
 
 impl Record {
     /// deserializing op
@@ -175,7 +177,7 @@ impl Index {
 
 
     pub fn from_bytes(bytes: &[u8]) -> Index {
-        let val = u32::from_be_bytes(convert_to_fixed(bytes));
+        let val = u32::from_be_bytes(*convert_to_fixed(bytes));
         Index { val }
     }
 
@@ -183,13 +185,6 @@ impl Index {
         self.val.to_be_bytes()
     }
 
-}
-
-fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
-    bytes.try_into().expect("expected an array with 4 bytes")
-}
-fn convert_from_fixed(bytes: &[u8;4]) -> &[u8] {
-    bytes.try_into().expect("expected an array with 4 bytes")
 }
 
 #[cfg(test)]
