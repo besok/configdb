@@ -60,57 +60,57 @@ mod tests {
     use crate::store::store::{append_bytes, read_from_end_bytes, read_slice_bytes, read_slice_from_end_bytes};
     use std::path::Path;
     use crate::store::commit_log::Index;
-    use std::fs::File;
+    use std::fs::{File, remove_file};
 
     #[test]
     fn simple_test() {
-        let file = File::create(Path::new("test.data")).unwrap();
-        let idx = Index::create(1111);
+        let p = Path::new("test.data");
+        let file = File::create(p).unwrap();
 
-        append_bytes(Path::new("test.data"), &Index::create(1).to_bytes());
-        append_bytes(Path::new("test.data"), &Index::create(2).to_bytes());
-        append_bytes(Path::new("test.data"), &Index::create(3).to_bytes());
-        append_bytes(Path::new("test.data"), &Index::create(4).to_bytes());
-        append_bytes(Path::new("test.data"), &Index::create(5).to_bytes());
+        append_bytes(p, &Index::create(1).to_bytes());
+        append_bytes(p, &Index::create(2).to_bytes());
+        append_bytes(p, &Index::create(3).to_bytes());
+        append_bytes(p, &Index::create(4).to_bytes());
+        append_bytes(p, &Index::create(5).to_bytes());
 
 
-        if let Ok(bytes) = read_from_end_bytes(Path::new("test.data"), 4) {
+        if let Ok(bytes) = read_from_end_bytes(p, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
-        if let Ok(bytes) = read_slice_bytes(Path::new("test.data"), 0, 4) {
+        if let Ok(bytes) = read_slice_bytes(p, 0, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(1))
         } else {
             panic!("panic")
         }
-        if let Ok(bytes) = read_slice_bytes(Path::new("test.data"), 4, 4) {
+        if let Ok(bytes) = read_slice_bytes(p, 4, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(2))
         } else {
             panic!("panic")
         }
-        if let Ok(bytes) = read_slice_bytes(Path::new("test.data"), 8, 4) {
+        if let Ok(bytes) = read_slice_bytes(p, 8, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(3))
         } else {
             panic!("panic")
         }
-        if let Ok(bytes) = read_slice_bytes(Path::new("test.data"), 12, 4) {
+        if let Ok(bytes) = read_slice_bytes(p, 12, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(4))
         } else {
             panic!("panic")
         }
-        if let Ok(bytes) = read_slice_bytes(Path::new("test.data"), 16, 4) {
+        if let Ok(bytes) = read_slice_bytes(p, 16, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
-        if let Ok(bytes) = read_slice_from_end_bytes(Path::new("test.data"), 8, 4) {
+        if let Ok(bytes) = read_slice_from_end_bytes(p, 8, 4) {
             let idx = Index::from_bytes(bytes.as_slice());
             assert_eq!(idx, Index::create(4))
         } else {
@@ -118,5 +118,6 @@ mod tests {
         }
 
 
+        let _ = remove_file(p);
     }
 }
