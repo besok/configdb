@@ -1,38 +1,40 @@
 use std::path::Path;
 use std::fs::{OpenOptions, File};
-use std::io::{Write, Read, Error, ErrorKind};
-use std::io;
+use std::io::{Write, Read};
+use std::{io, fs};
+use crate::store::commit_log::LogError;
 
 static INDEX_FILE_NAME: &str = "commit_log.idx";
 
 
-fn read_slice_bytes_internal(from: u64, to: u64, file_size: u64, f: File) -> Result<Vec<u8>, Error> {
+fn read_slice_bytes_internal(from: u64, to: u64, file_size: u64, f: File) -> Result<Vec<u8>, LogError> {
     if from >= file_size || to > file_size || from >= to {
-        return Err(Error::from(ErrorKind::InvalidInput));
+        return Err(LogError);
     }
     let mut res: Vec<u8> = vec![];
     for (i, b_res) in f.bytes().into_iter().enumerate() {
         if i >= from as usize && i < to as usize {
             match b_res {
                 Ok(b) => res.push(b),
-                Err(err) => return Err(err),
+                _ => (),
             }
         }
-        if i>= to as usize{
+        if i >= to as usize {
             break;
         }
     };
     Ok(res)
 }
 
-fn read_slice_bytes(p: &Path, from: u64, number: u64) -> io::Result<Vec<u8>> {
+fn read_slice_bytes(p: &Path, from: u64, number: u64) -> Result<Vec<u8>, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
     let to = from + number;
     read_slice_bytes_internal(from, to, file_size, f)
 }
 
-fn read_slice_from_end_bytes(p :&Path, from:u64,number:u64) -> io::Result<Vec<u8>>{
+
+fn read_slice_from_end_bytes(p: &Path, from: u64, number: u64) -> Result<Vec<u8>, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
     let start_pos = file_size - from;
@@ -40,7 +42,13 @@ fn read_slice_from_end_bytes(p :&Path, from:u64,number:u64) -> io::Result<Vec<u8
     read_slice_bytes_internal(start_pos, fin_pos, file_size, f)
 }
 
-fn read_from_end_bytes(p: &Path, number: u64) -> io::Result<Vec<u8>> {
+fn read_all_file_bytes(p: &Path) -> Result<Vec<u8>, LogError> {
+    let f = File::open(p)?;
+    let file_size = f.metadata()?.len();
+    read_slice_bytes_internal(0, file_size, file_size, f)
+}
+
+fn read_from_end_bytes(p: &Path, number: u64) -> Result<Vec<u8>, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
     let start_pos = file_size - number;
@@ -55,17 +63,23 @@ fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
         .write(bytes)
 }
 
+fn copy_file(src: &Path, dst: &Path) -> Result<(), LogError> {
+    fs::copy(src, dst)?;
+    Ok(())
+}
+
+
 #[cfg(test)]
 mod tests {
-    use crate::store::store::{append_bytes, read_from_end_bytes, read_slice_bytes, read_slice_from_end_bytes};
+    use crate::store::store::{append_bytes, read_from_end_bytes, read_slice_bytes, read_slice_from_end_bytes, read_all_file_bytes};
     use std::path::Path;
-    use crate::store::commit_log::Index;
+    use crate::store::commit_log::{Index, Record, FromBytes};
     use std::fs::{File, remove_file};
 
     #[test]
     fn simple_test() {
         let p = Path::new("test.data");
-        let file = File::create(p).unwrap();
+        let _ = File::create(p).unwrap();
 
         append_bytes(p, &Index::create(1).to_bytes());
         append_bytes(p, &Index::create(2).to_bytes());
@@ -75,49 +89,121 @@ mod tests {
 
 
         if let Ok(bytes) = read_from_end_bytes(p, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 0, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(1))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 4, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(2))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 8, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(3))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 12, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(4))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 16, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_from_end_bytes(p, 8, 4) {
-            let idx = Index::from_bytes(bytes.as_slice());
+            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(4))
         } else {
             panic!("panic")
         }
 
-
         let _ = remove_file(p);
+    }
+
+    #[test]
+    fn normal_test() {
+        let idx_file = Path::new("index.data");
+        let log_file = Path::new("log.data");
+
+        let _ = File::create(idx_file).unwrap();
+        let _ = File::create(log_file).unwrap();
+
+
+        let insert_rec = Record::insert_record(vec![1, 1, 1], vec![2, 2, 2]);
+        let delete_rec = Record::delete_record(vec![1, 1, 1, 1], vec![2, 2, 2, 1]);
+        let lock_rec = Record::lock_record(vec![1, 1], vec![2]);
+
+        append_bytes(idx_file, &Index::create(insert_rec.size_in_bytes()).to_bytes());
+        append_bytes(idx_file, &Index::create(delete_rec.size_in_bytes()).to_bytes());
+        append_bytes(idx_file, &Index::create(lock_rec.size_in_bytes()).to_bytes());
+
+        append_bytes(log_file, insert_rec.to_bytes().as_slice());
+        append_bytes(log_file, delete_rec.to_bytes().as_slice());
+        append_bytes(log_file, lock_rec.to_bytes().as_slice());
+
+        if let Ok(bt) = read_all_file_bytes(idx_file) {
+            if let Ok(idx_vec) = Index::from_bytes_array(bt.as_slice()) {
+                let mut str_pos = 0;
+                let val = idx_vec.get(0).unwrap().get_value() as u64;
+
+                match read_slice_bytes(log_file, str_pos, val) {
+                    Ok(bytes) => {
+                        if let Ok(rec) = Record::from_bytes(bytes.as_slice()) {
+                            assert_eq!(rec, insert_rec);
+                            str_pos += val;
+                        } else {
+                            panic!("panic")
+                        }
+                    }
+                    _ => panic!("panic")
+                }
+
+                let val = idx_vec.get(1).unwrap().get_value() as u64;
+                match read_slice_bytes(log_file, str_pos, val) {
+                    Ok(bytes) => {
+                        if let Ok(rec) = Record::from_bytes(bytes.as_slice()) {
+                            assert_eq!(rec, delete_rec);
+                            str_pos += val;
+                        } else {
+                            panic!("panic")
+                        }
+                    }
+                    _ => panic!("panic")
+                }
+                let val = idx_vec.get(2).unwrap().get_value() as u64;
+                match read_slice_bytes(log_file, str_pos, val) {
+                    Ok(bytes) => {
+                        if let Ok(rec) = Record::from_bytes(bytes.as_slice()) {
+                            assert_eq!(rec, lock_rec);
+                        } else {
+                            panic!("panic")
+                        }
+                    }
+                    _ => panic!("panic")
+                }
+            } else {
+                panic!("panic")
+            }
+        } else {
+            panic!("panic")
+        }
+
+
+        let _ = remove_file(idx_file);
+        let _ = remove_file(log_file);
     }
 }

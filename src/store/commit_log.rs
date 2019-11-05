@@ -1,5 +1,6 @@
 use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::Error;
 
 /// default record for index file for commit log.
 /// It consists of ints(u32) meaning the length of record in commit log
@@ -34,22 +35,30 @@ fn time_now_millis() -> u128 {
         .expect("Time went backwards")
         .as_millis()
 }
+
 fn convert_128(slice: &[u8]) -> u128 {
     let mut ts_array = [0; 16];
     ts_array.copy_from_slice(&slice[0..16]);
     u128::from_be_bytes(ts_array)
 }
+
 fn convert_32(slice: &[u8]) -> u32 {
     let mut ts_array = [0; 4];
     ts_array.copy_from_slice(&slice[0..4]);
     u32::from_be_bytes(ts_array)
 }
+
 fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
     bytes.try_into().expect("expected an array with 4 bytes")
 }
 
+pub trait FromBytes
+    where Self: Sized
+{
+    fn from_bytes(bytes: &[u8]) -> Result<Self, LogError>;
+}
 
-impl Record {
+impl FromBytes for Record {
     /// deserializing op
     /// # Arguments
     /// * `bytes` - bytes array to deserialize
@@ -64,9 +73,9 @@ impl Record {
     ///
     /// # Returns
     /// `Result` with Record or `LogError`
-    pub fn from_bytes(bytes: &[u8]) -> Result<Record, LogError> {
+    fn from_bytes(bytes: &[u8]) -> Result<Record, LogError> {
         if bytes.is_empty() {
-            return Err(LogError("bytes should not be empty"));
+            return Err(LogError);
         }
 
         let operation: RecordType = match bytes.get(0) {
@@ -84,7 +93,17 @@ impl Record {
 
         Ok(Record { timestamp, operation, key_len, val_len, key, val })
     }
+}
 
+impl FromBytes for Index {
+    fn from_bytes(bytes: &[u8]) -> Result<Index, LogError> {
+        let val = u32::from_be_bytes(*convert_to_fixed(bytes));
+        Ok(Index { val })
+    }
+}
+
+
+impl Record {
     /// serializing op
     /// # Order
     /// - the first byte is operation see `RecordType`
@@ -144,15 +163,20 @@ impl Record {
 
 
 #[derive(Debug, Clone)]
-pub struct LogError(&'static str);
+pub struct LogError;
+
+impl From<std::io::Error> for LogError {
+    fn from(e: Error) -> Self {
+        LogError
+    }
+}
 
 impl Index {
-
-    pub fn create(val :u32)->Index{
-        Index{ val }
+    pub fn create(val: u32) -> Index {
+        Index { val }
     }
 
-    pub fn get_value(&self)-> u32 {
+    pub fn get_value(&self) -> u32 {
         self.val
     }
 
@@ -166,30 +190,25 @@ impl Index {
         return Box::new(res);
     }
 
-    pub fn from_bytes_array(bytes: &[u8]) -> Result<std::vec::Vec<Index>, LogError> {
+    pub fn from_bytes_array(bytes: &[u8]) -> Result<Vec<Index>, LogError> {
         Ok(
             bytes
                 .chunks(4)
                 .map(|ch| Index::from_bytes(ch))
+                .filter(|ch| ch.is_ok())
+                .map(|ch|ch.unwrap())
                 .collect()
         )
-    }
-
-
-    pub fn from_bytes(bytes: &[u8]) -> Index {
-        let val = u32::from_be_bytes(*convert_to_fixed(bytes));
-        Index { val }
     }
 
     pub fn to_bytes(&self) -> [u8; 4] {
         self.val.to_be_bytes()
     }
-
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::store::commit_log::{Index, Record, RecordType};
+    use crate::store::commit_log::{Index, Record, RecordType, FromBytes};
 
     #[test]
     fn record_test() {
@@ -213,6 +232,7 @@ mod tests {
         let vec = rec.to_bytes();
         assert_eq!(vec.len(), rec.size_in_bytes() as usize);
 
+
         if let Ok(rec_from_bt) = Record::from_bytes(&vec) {
             assert_eq!(rec_from_bt, rec)
         } else {
@@ -227,7 +247,7 @@ mod tests {
         let bts = &idx.to_bytes();
         let idx = Index::from_bytes(bts);
 
-        assert_eq!(idx.val, 1000_000_000);
+        assert_eq!(idx.unwrap().get_value(), 1000_000_000);
 
         let idx_arr = &vec![
             Index { val: 1000_000_001 },
