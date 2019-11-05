@@ -89,43 +89,43 @@ mod tests {
 
 
         if let Ok(bytes) = read_from_end_bytes(p, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 0, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(1))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 4, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(2))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 8, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(3))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 12, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(4))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_bytes(p, 16, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
         if let Ok(bytes) = read_slice_from_end_bytes(p, 8, 4) {
-            let idx: Index = FromBytes::from_bytes(bytes.as_slice()).unwrap();
+            let idx = <Index as FromBytes>::from_bytes(bytes.as_slice()).unwrap();
             assert_eq!(idx, Index::create(4))
         } else {
             panic!("panic")
@@ -162,7 +162,7 @@ mod tests {
 
                 match read_slice_bytes(log_file, str_pos, val) {
                     Ok(bytes) => {
-                        if let Ok(rec) = Record::from_bytes(bytes.as_slice()) {
+                        if let Ok(rec) = <Record as FromBytes>::from_bytes(bytes.as_slice()) {
                             assert_eq!(rec, insert_rec);
                             str_pos += val;
                         } else {
@@ -175,7 +175,7 @@ mod tests {
                 let val = idx_vec.get(1).unwrap().get_value() as u64;
                 match read_slice_bytes(log_file, str_pos, val) {
                     Ok(bytes) => {
-                        if let Ok(rec) = Record::from_bytes(bytes.as_slice()) {
+                        if let Ok(rec) = <Record as FromBytes>::from_bytes(bytes.as_slice()) {
                             assert_eq!(rec, delete_rec);
                             str_pos += val;
                         } else {
@@ -187,7 +187,7 @@ mod tests {
                 let val = idx_vec.get(2).unwrap().get_value() as u64;
                 match read_slice_bytes(log_file, str_pos, val) {
                     Ok(bytes) => {
-                        if let Ok(rec) = Record::from_bytes(bytes.as_slice()) {
+                        if let Ok(rec) = <Record as FromBytes>::from_bytes(bytes.as_slice()) {
                             assert_eq!(rec, lock_rec);
                         } else {
                             panic!("panic")
