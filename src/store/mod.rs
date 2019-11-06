@@ -1,4 +1,4 @@
-pub mod commit_log;
-pub mod store;
+pub mod structure;
+pub mod files;
 
 

@@ -2,10 +2,56 @@ use std::path::Path;
 use std::fs::{OpenOptions, File};
 use std::io::{Write, Read};
 use std::{io, fs};
-use crate::store::commit_log::{LogError, FromBytes, ToBytes};
+use crate::store::structure::{LogError, FromBytes, ToBytes};
 
-static INDEX_FILE_NAME: &str = "commit_log.idx";
 
+pub fn append_item<T:ToBytes>(p: &Path, item:&T) -> io::Result<usize>{
+    append_bytes(p,item.to_bytes().as_slice())
+}
+
+pub fn copy_file(src: &Path, dst: &Path) -> Result<(), LogError> {
+    fs::copy(src, dst)?;
+    Ok(())
+}
+
+pub fn read_slice_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
+    let f = File::open(p)?;
+    let file_size = f.metadata()?.len();
+    let to = from + number;
+    read_slice_bytes_internally(from, to, file_size, f)
+        .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
+}
+
+pub fn read_from_end_bytes<T: FromBytes>(p: &Path, number: u64) -> Result<T, LogError> {
+    let f = File::open(p)?;
+    let file_size = f.metadata()?.len();
+    let start_pos = file_size - number;
+    read_slice_bytes_internally(start_pos, file_size, file_size, f)
+        .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
+}
+
+pub fn read_slice_from_end_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
+    let f = File::open(p)?;
+    let file_size = f.metadata()?.len();
+    let start_pos = file_size - from;
+    let fin_pos = start_pos + number;
+    read_slice_bytes_internally(start_pos, fin_pos, file_size, f)
+        .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
+}
+
+pub fn read_all_file_bytes(p: &Path) -> Result<Vec<u8>, LogError> {
+    let f = File::open(p)?;
+    let file_size = f.metadata()?.len();
+    read_slice_bytes_internally(0, file_size, file_size, f)
+}
+
+fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
+    OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(p)?
+        .write(bytes)
+}
 
 fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> Result<Vec<u8>, LogError> {
     if from >= file_size || to > file_size || from >= to {
@@ -26,61 +72,12 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
     Ok(res)
 }
 
-fn read_slice_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
-    let f = File::open(p)?;
-    let file_size = f.metadata()?.len();
-    let to = from + number;
-    read_slice_bytes_internally(from, to, file_size, f)
-        .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
-}
-
-fn read_from_end_bytes<T: FromBytes>(p: &Path, number: u64) -> Result<T, LogError> {
-    let f = File::open(p)?;
-    let file_size = f.metadata()?.len();
-    let start_pos = file_size - number;
-    read_slice_bytes_internally(start_pos, file_size, file_size, f)
-        .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
-}
-
-fn read_slice_from_end_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
-    let f = File::open(p)?;
-    let file_size = f.metadata()?.len();
-    let start_pos = file_size - from;
-    let fin_pos = start_pos + number;
-    read_slice_bytes_internally(start_pos, fin_pos, file_size, f)
-        .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
-}
-
-fn read_all_file_bytes(p: &Path) -> Result<Vec<u8>, LogError> {
-    let f = File::open(p)?;
-    let file_size = f.metadata()?.len();
-    read_slice_bytes_internally(0, file_size, file_size, f)
-}
-
-fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
-    OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open(p)?
-        .write(bytes)
-}
-
-fn append_item<T:ToBytes>(p: &Path, item:&T) -> io::Result<usize>{
-    append_bytes(p,item.to_bytes().as_slice())
-}
-
-
-fn copy_file(src: &Path, dst: &Path) -> Result<(), LogError> {
-    fs::copy(src, dst)?;
-    Ok(())
-}
-
 
 #[cfg(test)]
 mod tests {
-    use crate::store::store::{append_bytes, read_from_end_bytes, read_slice_bytes, read_slice_from_end_bytes, read_all_file_bytes, append_item};
+    use crate::store::files::{ read_from_end_bytes, read_slice_bytes, read_slice_from_end_bytes, read_all_file_bytes, append_item};
     use std::path::Path;
-    use crate::store::commit_log::{Index, Record, ToBytes};
+    use crate::store::structure::{Index, Record};
     use std::fs::{File, remove_file};
 
     #[test]
@@ -180,7 +177,6 @@ mod tests {
                 match read_slice_bytes::<Record>(log_file, str_pos, val) {
                     Ok(rec) => {
                         assert_eq!(rec, lock_rec);
-                        str_pos += val;
                     }
                     _ => panic!("panic")
                 }
