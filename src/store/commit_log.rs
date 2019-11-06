@@ -28,28 +28,41 @@ pub struct Record {
     key: Vec<u8>,
     val: Vec<u8>,
 }
-
-fn time_now_millis() -> u128 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_millis()
+pub trait ToBytes {
+    fn to_bytes(&self) -> Vec<u8>;
 }
 
-fn convert_128(slice: &[u8]) -> u128 {
-    let mut ts_array = [0; 16];
-    ts_array.copy_from_slice(&slice[0..16]);
-    u128::from_be_bytes(ts_array)
-}
+impl ToBytes for Record{
+    /// serializing op
+    /// # Order
+    /// - the first byte is operation see `RecordType`
+    /// - then 8 bytes is timestamp
+    /// - then 4 bytes is key length
+    /// - then 4 bytes is val length
+    /// - then key array
+    /// - then val array
+    fn to_bytes(&self) -> Vec<u8> {
+        let op: u8 =
+            match self.operation {
+                RecordType::Insert => 1,
+                RecordType::Delete => 2,
+                RecordType::Lock => 3,
+            };
 
-fn convert_32(slice: &[u8]) -> u32 {
-    let mut ts_array = [0; 4];
-    ts_array.copy_from_slice(&slice[0..4]);
-    u32::from_be_bytes(ts_array)
-}
+        let mut bytes = vec![op];
+        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
+        bytes.extend_from_slice(&self.key_len.to_be_bytes());
+        bytes.extend_from_slice(&self.val_len.to_be_bytes());
+        bytes.extend_from_slice(&self.key);
+        bytes.extend_from_slice(&self.val);
 
-fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
-    bytes.try_into().expect("expected an array with 4 bytes")
+        bytes
+    }
+}
+impl ToBytes for Index{
+    fn to_bytes(&self) -> Vec<u8> {
+        self.val.to_be_bytes().to_vec()
+    }
 }
 
 pub trait FromBytes
@@ -94,7 +107,6 @@ impl FromBytes for Record {
         Ok(Record { timestamp, operation, key_len, val_len, key, val })
     }
 }
-
 impl FromBytes for Index {
     fn from_bytes(bytes: &[u8]) -> Result<Index, LogError> {
         let val = u32::from_be_bytes(*convert_to_fixed(bytes));
@@ -104,31 +116,6 @@ impl FromBytes for Index {
 
 
 impl Record {
-    /// serializing op
-    /// # Order
-    /// - the first byte is operation see `RecordType`
-    /// - then 8 bytes is timestamp
-    /// - then 4 bytes is key length
-    /// - then 4 bytes is val length
-    /// - then key array
-    /// - then val array
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let op: u8 =
-            match self.operation {
-                RecordType::Insert => 1,
-                RecordType::Delete => 2,
-                RecordType::Lock => 3,
-            };
-
-        let mut bytes = vec![op];
-        bytes.extend_from_slice(&self.timestamp.to_be_bytes());
-        bytes.extend_from_slice(&self.key_len.to_be_bytes());
-        bytes.extend_from_slice(&self.val_len.to_be_bytes());
-        bytes.extend_from_slice(&self.key);
-        bytes.extend_from_slice(&self.val);
-
-        bytes
-    }
 
     /// size in bytes operation
     /// it counts size of record
@@ -161,6 +148,33 @@ impl Record {
     }
 }
 
+impl Index {
+    pub fn create(val: u32) -> Index {
+        Index { val }
+    }
+
+    pub fn get_value(&self) -> u32 {
+        self.val
+    }
+
+    pub fn array_to_bytes<T:ToBytes>(idx_array: &Vec<T>) -> Vec<u8> {
+        idx_array
+            .iter()
+            .flat_map(|item|item.to_bytes())
+            .collect()
+    }
+
+    pub fn from_bytes_array(bytes: &[u8]) -> Result<Vec<Index>, LogError> {
+        Ok(
+            bytes
+                .chunks(4)
+                .map(|ch| Index::from_bytes(ch))
+                .filter(|ch| ch.is_ok())
+                .map(|ch| ch.unwrap())
+                .collect()
+        )
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct LogError;
@@ -171,44 +185,33 @@ impl From<std::io::Error> for LogError {
     }
 }
 
-impl Index {
-    pub fn create(val: u32) -> Index {
-        Index { val }
-    }
 
-    pub fn get_value(&self) -> u32 {
-        self.val
-    }
+fn time_now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_millis()
+}
 
-    pub fn array_to_bytes(idx_array: &Vec<Index>) -> Box<Vec<u8>> {
-        let mut res: Vec<u8> = vec![];
+fn convert_128(slice: &[u8]) -> u128 {
+    let mut ts_array = [0; 16];
+    ts_array.copy_from_slice(&slice[0..16]);
+    u128::from_be_bytes(ts_array)
+}
 
-        idx_array
-            .iter()
-            .for_each(|idx| res.extend(idx.to_bytes().iter()));
+fn convert_32(slice: &[u8]) -> u32 {
+    let mut ts_array = [0; 4];
+    ts_array.copy_from_slice(&slice[0..4]);
+    u32::from_be_bytes(ts_array)
+}
 
-        return Box::new(res);
-    }
-
-    pub fn from_bytes_array(bytes: &[u8]) -> Result<Vec<Index>, LogError> {
-        Ok(
-            bytes
-                .chunks(4)
-                .map(|ch| Index::from_bytes(ch))
-                .filter(|ch| ch.is_ok())
-                .map(|ch|ch.unwrap())
-                .collect()
-        )
-    }
-
-    pub fn to_bytes(&self) -> [u8; 4] {
-        self.val.to_be_bytes()
-    }
+fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
+    bytes.try_into().expect("expected an array with 4 bytes")
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::store::commit_log::{Index, Record, RecordType, FromBytes};
+    use crate::store::commit_log::{Index, Record, RecordType, FromBytes, ToBytes};
 
     #[test]
     fn record_test() {
