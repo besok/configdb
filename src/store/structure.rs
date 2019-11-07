@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use crate::store::files::*;
 use std::io;
 use std::fs::{File, remove_file};
-use log::Log;
 
 static IDX_FILE_NAME: &str = "log_idx.cfgdb";
 static LOG_FILE_NAME: &str = "log_data.cfgdb";
@@ -263,9 +262,13 @@ mod tests {
     #[test]
     fn commit_log_test() {
         if let Ok(c_log) = CommitLog::create(PathBuf::from(r"c:\projects\configdb\data")) {
-            let rec = Record::insert_record(vec![1, 1, 1, 1, 2], vec![2, 2, 2, 2, 2]);
+            let rec = Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 20]);
 
-            c_log.add_record(&rec);
+            if let Ok(size_res) = c_log.add_record(&rec) {
+                assert_eq!(size_res,55)
+            } else {
+                panic!("panic")
+            }
             c_log.remove_files();
         } else {
             panic!("panic")
