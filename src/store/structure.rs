@@ -1,13 +1,14 @@
 use std::convert::TryInto;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::io::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use crate::store::files::*;
 use std::io;
 use std::fs::{File, remove_file};
 
 static IDX_FILE_NAME: &str = "log_idx.cfgdb";
 static LOG_FILE_NAME: &str = "log_data.cfgdb";
+static BACKUP_EXT: &str = "cfgdb.bck";
 
 /// default struct including into itself index and log
 #[derive(Debug)]
@@ -22,7 +23,24 @@ impl CommitLog {
         remove_file(&self.log)?;
         Ok(())
     }
-    pub fn create(dir: PathBuf) -> Result<Self, LogError> {
+    /// create a new commit log
+    /// Create 2 files for logging.
+    ///  - The first one is an index
+    ///  - The second one is a log
+    ///
+    /// # Arguments
+    /// * `dir` id a directory for files. If it does not exist or it is a file will be failed
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// if let Ok(c_log) = CommitLog::create(PathBuf::from(r"c:\projects\configdb\data")) {}
+    ///
+    /// ```
+    ///
+    pub fn create(dir_str: &str) -> Result<Self, LogError> {
+        let dir = PathBuf::from(dir_str);
+
         if dir.is_file() || !dir.exists() {
             return Err(LogError);
         }
@@ -37,7 +55,25 @@ impl CommitLog {
 
         Ok(CommitLog { log, idx })
     }
-    pub fn add_record(&self, record: &Record) -> io::Result<usize> {
+    pub fn backup(&self) -> Result<(), LogError> {
+        let idx = &self.idx;
+        let log = &self.log;
+        if !idx.exists() || !log.exists() {
+            return Err(LogError);
+        }
+
+
+        let mut idx_bk = PathBuf::from(idx);
+        let mut log_bk = PathBuf::from(log);
+
+        idx_bk.set_extension(BACKUP_EXT);
+        log_bk.set_extension(BACKUP_EXT);
+
+        copy_file(log.as_path(), log_bk.as_path())?;
+        copy_file(idx.as_path(), idx_bk.as_path())
+    }
+
+    pub fn push(&self, record: &Record) -> io::Result<usize> {
         let index = &Index::create(record.size_in_bytes());
         append_item(&self.idx, index)?;
         append_item(&self.log, record)
@@ -257,18 +293,18 @@ fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
 mod tests {
     use crate::store::structure::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog};
     use std::path::PathBuf;
-    use std::fs::remove_file;
 
     #[test]
     fn commit_log_test() {
-        if let Ok(c_log) = CommitLog::create(PathBuf::from(r"c:\projects\configdb\data")) {
+        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {
             let rec = Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 20]);
 
-            if let Ok(size_res) = c_log.add_record(&rec) {
-                assert_eq!(size_res,55)
+            if let Ok(size_res) = c_log.push(&rec) {
+                assert_eq!(size_res, 55);
             } else {
                 panic!("panic")
             }
+            c_log.backup();
             c_log.remove_files();
         } else {
             panic!("panic")
