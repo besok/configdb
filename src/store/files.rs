@@ -14,7 +14,7 @@ pub fn copy_file(src: &Path, dst: &Path) -> Result<(), LogError> {
     Ok(())
 }
 
-pub fn read_slice_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
+pub fn read_slice<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
     let to = from + number;
@@ -22,7 +22,7 @@ pub fn read_slice_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Resul
         .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
 }
 
-pub fn read_from_end_bytes<T: FromBytes>(p: &Path, number: u64) -> Result<T, LogError> {
+pub fn read_from_end<T: FromBytes>(p: &Path, number: u64) -> Result<T, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
     let start_pos = file_size - number;
@@ -30,7 +30,7 @@ pub fn read_from_end_bytes<T: FromBytes>(p: &Path, number: u64) -> Result<T, Log
         .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
 }
 
-pub fn read_slice_from_end_bytes<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
+pub fn read_slice_from_end<T: FromBytes>(p: &Path, from: u64, number: u64) -> Result<T, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
     let start_pos = file_size - from;
@@ -38,6 +38,8 @@ pub fn read_slice_from_end_bytes<T: FromBytes>(p: &Path, from: u64, number: u64)
     read_slice_bytes_internally(start_pos, fin_pos, file_size, f)
         .and_then(|bs| FromBytes::from_bytes(bs.as_slice()))
 }
+
+
 
 pub fn read_all_file_bytes(p: &Path) -> Result<Vec<u8>, LogError> {
     let f = File::open(p)?;
@@ -55,7 +57,7 @@ fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
 
 fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> Result<Vec<u8>, LogError> {
     if from >= file_size || to > file_size || from >= to {
-        return Err(LogError);
+        return Err(LogError(String::from(format!("error - from:{f} >= file_size:{fs} || to:{t} > file_size:{fs} || from:{f} >= to:{t}",f=from,fs=file_size,t=to))));
     }
     let mut res: Vec<u8> = vec![];
     for (i, b_res) in f.bytes().into_iter().enumerate() {
@@ -75,7 +77,7 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
 
 #[cfg(test)]
 mod tests {
-    use crate::store::files::{ read_from_end_bytes, read_slice_bytes, read_slice_from_end_bytes, read_all_file_bytes, append_item};
+    use crate::store::files::{read_from_end, read_slice, read_slice_from_end, read_all_file_bytes, append_item};
     use std::path::Path;
     use crate::store::structure::{Index, Record};
     use std::fs::{File, remove_file};
@@ -92,38 +94,38 @@ mod tests {
         append_item(p, &Index::create(5));
 
 
-        if let Ok(idx) = read_from_end_bytes::<Index>(p, 4) {
+        if let Ok(idx) = read_from_end::<Index>(p, 4) {
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
-        if let Ok(idx) = read_slice_bytes::<Index>(p, 0, 4) {
+        if let Ok(idx) = read_slice::<Index>(p, 0, 4) {
             assert_eq!(idx, Index::create(1))
         } else {
             panic!("panic")
         }
-        if let Ok(idx) = read_slice_bytes::<Index>(p, 4, 4) {
+        if let Ok(idx) = read_slice::<Index>(p, 4, 4) {
             assert_eq!(idx, Index::create(2))
         } else {
             panic!("panic")
         }
-        if let Ok(idx) = read_slice_bytes::<Index>(p, 8, 4) {
+        if let Ok(idx) = read_slice::<Index>(p, 8, 4) {
             assert_eq!(idx, Index::create(3))
         } else {
             panic!("panic")
         }
-        if let Ok(idx) = read_slice_bytes::<Index>(p, 12, 4) {
+        if let Ok(idx) = read_slice::<Index>(p, 12, 4) {
             assert_eq!(idx, Index::create(4))
         } else {
             panic!("panic")
         }
-        if let Ok(idx) = read_slice_bytes::<Index>(p, 16, 4) {
+        if let Ok(idx) = read_slice::<Index>(p, 16, 4) {
             assert_eq!(idx, Index::create(5))
         } else {
             panic!("panic")
         }
 
-        match read_slice_from_end_bytes::<Index>(p, 8, 4) {
+        match read_slice_from_end::<Index>(p, 8, 4) {
             Ok(idx) => assert_eq!(idx, Index::create(4)),
             Err(_) => panic!("panic"),
         }
@@ -157,7 +159,7 @@ mod tests {
                 let mut str_pos = 0;
                 let val = idx_vec.get(0).unwrap().get_value() as u64;
 
-                match read_slice_bytes::<Record>(log_file, str_pos, val) {
+                match read_slice::<Record>(log_file, str_pos, val) {
                     Ok(rec) => {
                             assert_eq!(rec, insert_rec);
                             str_pos += val;
@@ -166,7 +168,7 @@ mod tests {
                 }
 
                 let val = idx_vec.get(1).unwrap().get_value() as u64;
-                match read_slice_bytes::<Record>(log_file, str_pos, val) {
+                match read_slice::<Record>(log_file, str_pos, val) {
                     Ok(rec) => {
                         assert_eq!(rec, delete_rec);
                         str_pos += val;
@@ -174,7 +176,7 @@ mod tests {
                     _ => panic!("panic")
                 }
                 let val = idx_vec.get(2).unwrap().get_value() as u64;
-                match read_slice_bytes::<Record>(log_file, str_pos, val) {
+                match read_slice::<Record>(log_file, str_pos, val) {
                     Ok(rec) => {
                         assert_eq!(rec, lock_rec);
                     }

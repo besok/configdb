@@ -18,7 +18,7 @@ pub struct CommitLog {
 }
 
 impl CommitLog {
-    pub fn remove_files(&self) -> Result<(), LogError> {
+    pub fn remove_files(&self) -> io::Result<()> {
         remove_file(&self.idx)?;
         remove_file(&self.log)?;
         Ok(())
@@ -42,7 +42,7 @@ impl CommitLog {
         let dir = PathBuf::from(dir_str);
 
         if dir.is_file() || !dir.exists() {
-            return Err(LogError);
+            return Err(LogError(String::from(" err in dir.is_file() || !dir.exists()")));
         }
         let mut idx = PathBuf::from(dir.clone());
         let mut log = PathBuf::from(dir.clone());
@@ -53,13 +53,14 @@ impl CommitLog {
         File::create(idx.as_path())?;
         File::create(log.as_path())?;
 
+
         Ok(CommitLog { log, idx })
     }
     pub fn backup(&self) -> Result<(), LogError> {
         let idx = &self.idx;
         let log = &self.log;
         if !idx.exists() || !log.exists() {
-            return Err(LogError);
+            return Err(LogError(String::from(" error in !idx.exists() || !log.exists()")));
         }
 
 
@@ -72,11 +73,31 @@ impl CommitLog {
         copy_file(log.as_path(), log_bk.as_path())?;
         copy_file(idx.as_path(), idx_bk.as_path())
     }
-
     pub fn push(&self, record: &Record) -> io::Result<usize> {
         let index = &Index::create(record.size_in_bytes());
         append_item(&self.idx, index)?;
         append_item(&self.log, record)
+    }
+
+    pub fn read_from_end(&self, number_from_end: usize) -> Result<Record, LogError> {
+        let mut r_start_pos = 0;
+        let mut r_number: u64 = 0;
+        for i in 1..=number_from_end {
+            let mut pos: u64 = i as u64 * 4;
+            match read_slice_from_end::<Index>(self.idx.as_path(), pos, 4) {
+                Ok(idx) => {
+                    let vl = idx.get_value() as u64;
+                    r_start_pos += vl;
+                    r_number = vl;
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        if r_number == 0 {
+            return Err(LogError(String::from(" error is r number == 0 ")));
+        }
+        read_slice_from_end::<Record>(self.log.as_path(), r_start_pos, r_number)
     }
 }
 
@@ -168,7 +189,7 @@ impl FromBytes for Record {
     /// `Result` with Record or `LogError`
     fn from_bytes(bytes: &[u8]) -> Result<Record, LogError> {
         if bytes.is_empty() {
-            return Err(LogError);
+            return Err(LogError(String::from(" bytes are empty")));
         }
 
         let operation: RecordType = match bytes.get(0) {
@@ -257,14 +278,14 @@ impl Index {
 }
 
 #[derive(Debug, Clone)]
-pub struct LogError;
+pub struct LogError(pub String);
+
 
 impl From<std::io::Error> for LogError {
-    fn from(_: Error) -> Self {
-        LogError
+    fn from(e: Error) -> Self {
+        LogError(e.to_string())
     }
 }
-
 
 fn time_now_millis() -> u128 {
     SystemTime::now()
@@ -291,8 +312,51 @@ fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::structure::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog};
-    use std::path::PathBuf;
+    use crate::store::structure::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog, time_now_millis};
+
+    #[test]
+    fn read_log_test() {
+        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {
+            for i in 1..101 {
+                let rec = &Record::insert_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
+                match c_log.push(rec) {
+                    Err(e) => panic!("{}", e.to_string()),
+                    _ => continue
+                }
+            }
+            for i in 1..101 {
+                let rev_i = 101 - i;
+                let expected_size = (rev_i * 1 + rev_i * 10 + 25) as u32;
+                match c_log.read_from_end(i) {
+                    Ok(r) => assert_eq!(r.size_in_bytes(), expected_size),
+                    Err(e) => panic!(" e {:?}", e)
+                }
+            }
+            c_log.remove_files();
+
+        } else {
+            panic!("panic")
+        }
+    }
+
+    #[test]
+    fn dummy_performance_test() {
+        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data\performance") {
+            let start_time = time_now_millis();
+            let rec = &Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 100]);
+            for _ in 1..1000 {
+                match c_log.push(rec) {
+                    Err(e) => panic!("{}", e.to_string()),
+                    _ => continue
+                }
+            }
+            let dur = time_now_millis() - start_time;
+            println!("dur = {}", dur);
+            c_log.remove_files();
+        } else {
+            panic!("panic")
+        }
+    }
 
     #[test]
     fn commit_log_test() {
@@ -304,8 +368,10 @@ mod tests {
             } else {
                 panic!("panic")
             }
-            c_log.backup();
-            c_log.remove_files();
+
+            if let Err(e) = c_log.remove_files() {
+                panic!("-> {}", e.to_string());
+            }
         } else {
             panic!("panic")
         }
