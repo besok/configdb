@@ -79,10 +79,41 @@ impl CommitLog {
         append_item(&self.log, record)
     }
 
-    pub fn read_from_end(&self, number_from_end: usize) -> Result<Record, LogError> {
+    /// read list of records from the end according a position
+    /// # Arguments
+    ///* `number_from_end` the position relative to the end. Should be more or equal 1
+    /// Can return `LogError` if number less 1
+    pub fn read_all_from_end(&self, number_from_end: usize) -> Result<Vec<Record>, LogError> {
         let mut r_start_pos = 0;
         let mut r_number: u64 = 0;
+        let mut records: Vec<Record> = Vec::new();
+
         for i in 1..=number_from_end {
+            let mut pos: u64 = i as u64 * 4;
+            match read_slice_from_end::<Index>(self.idx.as_path(), pos, 4) {
+                Ok(idx) => {
+                    let vl = idx.get_value() as u64;
+                    r_start_pos += vl;
+                    r_number = vl;
+                    match read_slice_from_end::<Record>(self.log.as_path(), r_start_pos, r_number) {
+                        Ok(r) => records.push(r),
+                        Err(e) => return Err(e),
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(records)
+    }
+
+    /// read record from the end according a position
+    /// # Arguments
+    ///* `number_from_end` the position relative to the end. Should be more or equal 1
+    /// Can return `LogError` if number less 1
+    pub fn read_from_end(&self, pos_from_end: usize) -> Result<Record, LogError> {
+        let mut r_start_pos = 0;
+        let mut r_number: u64 = 0;
+        for i in 1..=pos_from_end {
             let mut pos: u64 = i as u64 * 4;
             match read_slice_from_end::<Index>(self.idx.as_path(), pos, 4) {
                 Ok(idx) => {
@@ -312,7 +343,38 @@ fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::structure::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog, time_now_millis};
+    use crate::store::commit_log::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog, time_now_millis};
+
+    #[test]
+    fn read_all_log_test() {
+        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {
+            for i in 1..101 {
+                let rec = &Record::delete_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
+                match c_log.push(rec) {
+                    Err(e) => panic!("{}", e.to_string()),
+                    _ => continue
+                }
+            }
+            let mut sizes = vec![0;0];
+            for i in 1..101 {
+                let rev_i = 101 - i;
+                let expected_size = (rev_i * 1 + rev_i * 10 + 25) as u32;
+                sizes.push(expected_size);
+            }
+
+            match  c_log.read_all_from_end(100){
+                Ok(records) => {
+                    for (i,r) in records.iter().enumerate(){
+                        assert_eq!(r.size_in_bytes(),*sizes.get(i).unwrap())
+                    }
+                },
+                Err(e) => panic!(" e {:?}", e),
+            }
+            c_log.remove_files();
+        } else {
+            panic!("panic")
+        }
+    }
 
     #[test]
     fn read_log_test() {
@@ -333,11 +395,11 @@ mod tests {
                 }
             }
             c_log.remove_files();
-
         } else {
             panic!("panic")
         }
     }
+
 
     #[test]
     fn dummy_performance_test() {

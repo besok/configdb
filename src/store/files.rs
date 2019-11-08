@@ -2,7 +2,7 @@ use std::path::Path;
 use std::fs::{OpenOptions, File};
 use std::io::{Write, Read};
 use std::{io, fs};
-use crate::store::structure::{LogError, FromBytes, ToBytes};
+use crate::store::commit_log::{LogError, FromBytes, ToBytes};
 
 
 pub fn append_item<T:ToBytes>(p: &Path, item:&T) -> io::Result<usize>{
@@ -79,7 +79,7 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
 mod tests {
     use crate::store::files::{read_from_end, read_slice, read_slice_from_end, read_all_file_bytes, append_item};
     use std::path::Path;
-    use crate::store::structure::{Index, Record};
+    use crate::store::commit_log::{Index, Record};
     use std::fs::{File, remove_file};
 
     #[test]
