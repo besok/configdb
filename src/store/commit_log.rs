@@ -12,6 +12,8 @@ static IDX_FILE_NAME: &str = "log_idx.cfgdb";
 static LOG_FILE_NAME: &str = "log_data.cfgdb";
 static BACKUP_EXT: &str = "cfgdb.bck";
 
+pub type LogResult<K> = Result<K, LogError>;
+
 /// default struct including into itself index and log
 #[derive(Debug)]
 pub struct CommitLog {
@@ -34,7 +36,7 @@ impl CommitLog {
 
     /// tries to create a new commit log even the file lock exists
     /// If the file lock exists tries to delete it then invoke `CommitLog::create`
-    pub fn create_force(dir_str: &str) -> Result<Self, LogError> {
+    pub fn create_force(dir_str: &str) -> LogResult<Self> {
         let mut lock = PathBuf::from(dir_str);
         lock.push(LOCK_FILE);
         if lock.exists() {
@@ -58,7 +60,7 @@ impl CommitLog {
     /// if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {}
     /// ```
     ///
-    pub fn create(dir_str: &str) -> Result<Self, LogError> {
+    pub fn create(dir_str: &str) -> LogResult<Self> {
         let dir = {
             let dir = PathBuf::from(dir_str);
             if dir.is_file() {
@@ -95,7 +97,7 @@ impl CommitLog {
             },
         })
     }
-    pub fn backup(&self) -> Result<(), LogError> {
+    pub fn backup(&self) -> LogResult<()> {
         let idx = &self.idx;
         let log = &self.log;
         if !idx.exists() || !log.exists() {
@@ -111,17 +113,18 @@ impl CommitLog {
         copy_file(log.as_path(), log_bk.as_path())?;
         copy_file(idx.as_path(), idx_bk.as_path())
     }
-    pub fn push(&self, record: &Record) -> io::Result<usize> {
+    pub fn push(&self, record: &Record) -> LogResult<usize>{
         let index = &Index::create(record.size_in_bytes());
         append_item(&self.idx, index)?;
-        append_item(&self.log, record)
+        let r = append_item(&self.log, record)?;
+        Ok(r)
     }
 
     /// read list of records from the end according a position
     /// # Arguments
     ///* `number_from_end` the position relative to the end. Should be more or equal 1
     /// Can return `LogError` if number less 1
-    pub fn read_all_from_end(&self, number_from_end: usize) -> Result<Vec<Record>, LogError> {
+    pub fn read_all_from_end(&self, number_from_end: usize) -> LogResult<Vec<Record>> {
         let mut r_start_pos = 0;
         let mut r_number: u64;
         let mut records: Vec<Record> = Vec::new();
@@ -148,7 +151,7 @@ impl CommitLog {
     /// # Arguments
     ///* `number_from_end` the position relative to the end. Should be more or equal 1
     /// Can return `LogError` if number less 1
-    pub fn read_from_end(&self, pos_from_end: usize) -> Result<Record, LogError> {
+    pub fn read_from_end(&self, pos_from_end: usize) -> LogResult<Record> {
         let mut r_start_pos = 0;
         let mut r_number: u64 = 0;
         for i in 1..=pos_from_end {
@@ -238,7 +241,7 @@ impl ToBytes for Index {
 pub trait FromBytes
     where Self: Sized
 {
-    fn from_bytes(bytes: &[u8]) -> Result<Self, LogError>;
+    fn from_bytes(bytes: &[u8]) -> LogResult<Self>;
 }
 
 impl FromBytes for Record {
@@ -256,7 +259,7 @@ impl FromBytes for Record {
     ///
     /// # Returns
     /// `Result` with Record or `LogError`
-    fn from_bytes(bytes: &[u8]) -> Result<Record, LogError> {
+    fn from_bytes(bytes: &[u8]) -> LogResult<Record> {
         if bytes.is_empty() {
             return Err(LogError(String::from(" bytes are empty")));
         }
@@ -279,7 +282,7 @@ impl FromBytes for Record {
 }
 
 impl FromBytes for Index {
-    fn from_bytes(bytes: &[u8]) -> Result<Index, LogError> {
+    fn from_bytes(bytes: &[u8]) -> LogResult<Index> {
         let val = u32::from_be_bytes(*convert_to_fixed(bytes));
         Ok(Index { val })
     }
@@ -334,7 +337,7 @@ impl Index {
             .collect()
     }
 
-    pub fn from_bytes_array(bytes: &[u8]) -> Result<Vec<Index>, LogError> {
+    pub fn from_bytes_array(bytes: &[u8]) -> LogResult<Vec<Index>> {
         Ok(
             bytes
                 .chunks(4)
@@ -402,7 +405,7 @@ mod tests {
             for i in 1..101 {
                 let rec = &Record::delete_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
                 match c_log.push(rec) {
-                    Err(e) => panic!("{}", e.to_string()),
+                    Err(e) => panic!("{}",e.0),
                     _ => continue
                 }
             }
@@ -433,7 +436,7 @@ mod tests {
             for i in 1..101 {
                 let rec = &Record::insert_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
                 match c_log.push(rec) {
-                    Err(e) => panic!("{}", e.to_string()),
+                    Err(e) => panic!("{}", e.0),
                     _ => continue
                 }
             }
@@ -457,9 +460,8 @@ mod tests {
             let start_time = time_now_millis();
             let rec = &Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 100]);
             for _ in 1..1000 {
-                match c_log.push(rec) {
-                    Err(e) => panic!("{}", e.to_string()),
-                    _ => continue
+                if let Err(e)= c_log.push(rec) {
+                    panic!("{}", e.0);
                 }
             }
             let dur = time_now_millis() - start_time;
