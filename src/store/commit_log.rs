@@ -6,6 +6,8 @@ use crate::store::files::*;
 use std::io;
 use std::fs::{File, remove_file};
 
+
+static LOCK_FILE: &str = "log.lock";
 static IDX_FILE_NAME: &str = "log_idx.cfgdb";
 static LOG_FILE_NAME: &str = "log_data.cfgdb";
 static BACKUP_EXT: &str = "cfgdb.bck";
@@ -15,47 +17,83 @@ static BACKUP_EXT: &str = "cfgdb.bck";
 pub struct CommitLog {
     idx: PathBuf,
     log: PathBuf,
+    lock: PathBuf,
 }
 
 impl CommitLog {
+    pub fn close(&self) -> io::Result<()> {
+        remove_file(&self.lock)
+    }
+
     pub fn remove_files(&self) -> io::Result<()> {
         remove_file(&self.idx)?;
         remove_file(&self.log)?;
+        remove_file(&self.lock)?;
         Ok(())
     }
+
+    /// tries to create a new commit log even the file lock exists
+    /// If the file lock exists tries to delete it then invoke `CommitLog::create`
+    pub fn create_force(dir_str: &str) -> Result<Self, LogError> {
+        let mut lock = PathBuf::from(dir_str);
+        lock.push(LOCK_FILE);
+        if lock.exists() {
+            std::fs::remove_file(lock)?
+        }
+
+        CommitLog::create(dir_str)
+    }
+
     /// create a new commit log
-    /// Create 2 files for logging.
+    /// Create 3 files for logging.
     ///  - The first one is an index
     ///  - The second one is a log
-    ///
+    ///  - the third one is a lock file
     /// # Arguments
-    /// * `dir` id a directory for files. If it does not exist or it is a file will be failed
+    /// * `dir` id a directory for files. If it does not exist it tries to create dirs
     ///
     /// # Examples
     ///
     /// ```
-    /// if let Ok(c_log) = CommitLog::create(PathBuf::from(r"c:\projects\configdb\data")) {}
-    ///
+    /// if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {}
     /// ```
     ///
     pub fn create(dir_str: &str) -> Result<Self, LogError> {
-        let dir = PathBuf::from(dir_str);
+        let dir = {
+            let dir = PathBuf::from(dir_str);
+            if dir.is_file() {
+                return Err(LogError(String::from(" err in dir.is_file() || !dir.exists()")));
+            }
+            if !dir.exists() {
+                std::fs::create_dir_all(dir.as_path())?;
+            }
+            dir
+        };
 
-        if dir.is_file() {
-            return Err(LogError(String::from(" err in dir.is_file() || !dir.exists()")));
-        }
-        std::fs::create_dir_all(dir.as_path())?;
+        Ok(CommitLog {
+            lock: {
+                let mut lock = PathBuf::from(dir.clone());
+                lock.push(LOCK_FILE);
+                if lock.exists() {
+                    return Err(LogError(String::from(format!("lock file for {} exists", dir_str))));
+                }
 
-        let mut idx = PathBuf::from(dir.clone());
-        let mut log = PathBuf::from(dir.clone());
-
-        idx.push(IDX_FILE_NAME);
-        log.push(LOG_FILE_NAME);
-
-        File::create(idx.as_path())?;
-        File::create(log.as_path())?;
-
-        Ok(CommitLog { log, idx })
+                File::create(lock.as_path())?;
+                lock
+            },
+            log: {
+                let mut log = PathBuf::from(dir.clone());
+                log.push(LOG_FILE_NAME);
+                File::create(log.as_path())?;
+                log
+            },
+            idx: {
+                let mut idx = PathBuf::from(dir.clone());
+                idx.push(IDX_FILE_NAME);
+                File::create(idx.as_path())?;
+                idx
+            },
+        })
     }
     pub fn backup(&self) -> Result<(), LogError> {
         let idx = &self.idx;
@@ -345,6 +383,19 @@ fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
 mod tests {
     use crate::store::commit_log::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog, time_now_millis};
 
+
+    #[test]
+    fn try_to_create_force_test() {
+        if let Ok(c_log) = CommitLog::create_force(r"test_data\force_create") {
+            if let Ok(_) = CommitLog::create(r"test_data\force_create") { panic!("") }
+            if let Err(_) = CommitLog::create_force(r"test_data\force_create") { panic!("") }
+            c_log.remove_files();
+        } else {
+            panic!("")
+        }
+    }
+
+
     #[test]
     fn read_all_log_test() {
         if let Ok(c_log) = CommitLog::create(r"test_data\read_all") {
@@ -355,19 +406,19 @@ mod tests {
                     _ => continue
                 }
             }
-            let mut sizes = vec![0;0];
+            let mut sizes = vec![0; 0];
             for i in 1..101 {
                 let rev_i = 101 - i;
                 let expected_size = (rev_i * 1 + rev_i * 10 + 25) as u32;
                 sizes.push(expected_size);
             }
 
-            match  c_log.read_all_from_end(100){
+            match c_log.read_all_from_end(100) {
                 Ok(records) => {
-                    for (i,r) in records.iter().enumerate(){
-                        assert_eq!(r.size_in_bytes(),*sizes.get(i).unwrap())
+                    for (i, r) in records.iter().enumerate() {
+                        assert_eq!(r.size_in_bytes(), *sizes.get(i).unwrap())
                     }
-                },
+                }
                 Err(e) => panic!(" e {:?}", e),
             }
             c_log.remove_files();
@@ -492,5 +543,4 @@ mod tests {
             panic!("assertion failed");
         }
     }
-
 }
