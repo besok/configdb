@@ -1,12 +1,12 @@
 use std::path::Path;
 use std::fs::{OpenOptions, File};
-use std::io::{Write, Read};
+use std::io::{Write, Read, BufReader};
 use std::{io, fs};
 use crate::store::commit_log::{LogError, FromBytes, ToBytes};
 
 
-pub fn append_item<T:ToBytes>(p: &Path, item:&T) -> io::Result<usize>{
-    append_bytes(p,item.to_bytes().as_slice())
+pub fn append_item<T: ToBytes>(p: &Path, item: &T) -> io::Result<usize> {
+    append_bytes(p, item.to_bytes().as_slice())
 }
 
 pub fn copy_file(src: &Path, dst: &Path) -> Result<(), LogError> {
@@ -40,7 +40,6 @@ pub fn read_slice_from_end<T: FromBytes>(p: &Path, from: u64, number: u64) -> Re
 }
 
 
-
 pub fn read_all_file_bytes(p: &Path) -> Result<Vec<u8>, LogError> {
     let f = File::open(p)?;
     let file_size = f.metadata()?.len();
@@ -57,21 +56,27 @@ fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
 
 fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> Result<Vec<u8>, LogError> {
     if from >= file_size || to > file_size || from >= to {
-        return Err(LogError(String::from(format!("error - from:{f} >= file_size:{fs} || to:{t} > file_size:{fs} || from:{f} >= to:{t}",f=from,fs=file_size,t=to))));
+        return Err(
+            LogError(String::from(
+                format!("from:{f} >= file_size:{fs} || to:{t} > file_size:{fs} || from:{f} >= to:{t}",
+                        f = from, fs = file_size, t = to)))
+        );
     }
-    let mut res: Vec<u8> = vec![];
-    for (i, b_res) in f.bytes().into_iter().enumerate() {
-        if i >= from as usize && i < to as usize {
-            match b_res {
-                Ok(b) => res.push(b),
-                _ => (),
-            }
-        }
-        if i >= to as usize {
-            break;
-        }
-    };
-    Ok(res)
+
+    let range = (to - from) as usize;
+    let vec: Vec<u8> =
+        BufReader::new(f)
+            .bytes()
+            .skip(from as usize)
+            .take(range)
+            .filter_map(Result::ok)
+            .collect();
+
+    if vec.len() == range {
+        Ok(vec)
+    } else {
+        Err(LogError(String::from("some of bytes are broken")))
+    }
 }
 
 
@@ -161,8 +166,8 @@ mod tests {
 
                 match read_slice::<Record>(log_file, str_pos, val) {
                     Ok(rec) => {
-                            assert_eq!(rec, insert_rec);
-                            str_pos += val;
+                        assert_eq!(rec, insert_rec);
+                        str_pos += val;
                     }
                     _ => panic!("panic")
                 }

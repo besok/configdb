@@ -41,9 +41,11 @@ impl CommitLog {
     pub fn create(dir_str: &str) -> Result<Self, LogError> {
         let dir = PathBuf::from(dir_str);
 
-        if dir.is_file() || !dir.exists() {
+        if dir.is_file() {
             return Err(LogError(String::from(" err in dir.is_file() || !dir.exists()")));
         }
+        std::fs::create_dir_all(dir.as_path())?;
+
         let mut idx = PathBuf::from(dir.clone());
         let mut log = PathBuf::from(dir.clone());
 
@@ -53,7 +55,6 @@ impl CommitLog {
         File::create(idx.as_path())?;
         File::create(log.as_path())?;
 
-
         Ok(CommitLog { log, idx })
     }
     pub fn backup(&self) -> Result<(), LogError> {
@@ -62,7 +63,6 @@ impl CommitLog {
         if !idx.exists() || !log.exists() {
             return Err(LogError(String::from(" error in !idx.exists() || !log.exists()")));
         }
-
 
         let mut idx_bk = PathBuf::from(idx);
         let mut log_bk = PathBuf::from(log);
@@ -85,11 +85,11 @@ impl CommitLog {
     /// Can return `LogError` if number less 1
     pub fn read_all_from_end(&self, number_from_end: usize) -> Result<Vec<Record>, LogError> {
         let mut r_start_pos = 0;
-        let mut r_number: u64 = 0;
+        let mut r_number: u64;
         let mut records: Vec<Record> = Vec::new();
 
         for i in 1..=number_from_end {
-            let mut pos: u64 = i as u64 * 4;
+            let pos: u64 = i as u64 * 4;
             match read_slice_from_end::<Index>(self.idx.as_path(), pos, 4) {
                 Ok(idx) => {
                     let vl = idx.get_value() as u64;
@@ -114,7 +114,7 @@ impl CommitLog {
         let mut r_start_pos = 0;
         let mut r_number: u64 = 0;
         for i in 1..=pos_from_end {
-            let mut pos: u64 = i as u64 * 4;
+            let pos: u64 = i as u64 * 4;
             match read_slice_from_end::<Index>(self.idx.as_path(), pos, 4) {
                 Ok(idx) => {
                     let vl = idx.get_value() as u64;
@@ -347,7 +347,7 @@ mod tests {
 
     #[test]
     fn read_all_log_test() {
-        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {
+        if let Ok(c_log) = CommitLog::create(r"test_data\read_all") {
             for i in 1..101 {
                 let rec = &Record::delete_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
                 match c_log.push(rec) {
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn read_log_test() {
-        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {
+        if let Ok(c_log) = CommitLog::create(r"test_data\read_partially") {
             for i in 1..101 {
                 let rec = &Record::insert_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
                 match c_log.push(rec) {
@@ -400,10 +400,9 @@ mod tests {
         }
     }
 
-
     #[test]
     fn dummy_performance_test() {
-        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data\performance") {
+        if let Ok(c_log) = CommitLog::create(r"test_data\performance") {
             let start_time = time_now_millis();
             let rec = &Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 100]);
             for _ in 1..1000 {
@@ -422,7 +421,7 @@ mod tests {
 
     #[test]
     fn commit_log_test() {
-        if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {
+        if let Ok(c_log) = CommitLog::create(r"test_data\simple") {
             let rec = Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 20]);
 
             if let Ok(size_res) = c_log.push(&rec) {
@@ -493,4 +492,5 @@ mod tests {
             panic!("assertion failed");
         }
     }
+
 }
