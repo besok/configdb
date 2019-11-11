@@ -1,3 +1,24 @@
+//! This module contains methods to work with file through byte arrays
+//! Uses `FromBytes` and `ToBytes` traits to work with that
+//!
+//! # Examples
+//! ```
+//! use crate::store::commit_log::{Index};
+//! use crate::store::files::{append_item, read_slice};
+//! use std::path::Path;
+//!
+//! fn main() {
+//!        let p = Path::new("test.data");
+//!        let _ = File::create(p).unwrap();
+//!        append_item(p, &Index::create(1));
+//!
+//!        if let Ok(idx) = read_slice::<Index>(p, 0, 4) {
+//!            assert_eq!(idx, Index::create(1))
+//!        }
+//! }
+//!
+//! ```
+
 use std::path::Path;
 use std::fs::{OpenOptions, File};
 use std::io::{Write, Read, BufReader};
@@ -65,7 +86,7 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
 
     let range = (to - from) as usize;
     let vec: Vec<u8> =
-        BufReader::with_capacity( 1024 , f)
+        BufReader::with_capacity(1024, f)
             .bytes()
             .skip(from as usize)
             .take(range)
