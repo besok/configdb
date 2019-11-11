@@ -65,7 +65,7 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
 
     let range = (to - from) as usize;
     let vec: Vec<u8> =
-        BufReader::new(f)
+        BufReader::with_capacity( 1024 , f)
             .bytes()
             .skip(from as usize)
             .take(range)
