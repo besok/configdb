@@ -12,7 +12,7 @@ static IDX_FILE_NAME: &str = "log_idx.cfgdb";
 static LOG_FILE_NAME: &str = "log_data.cfgdb";
 static BACKUP_EXT: &str = "cfgdb.bck";
 
-pub type LogResult<K> = Result<K, LogError>;
+pub type StoreResult<K> = Result<K, LogError>;
 
 /// default struct including into itself index and log
 #[derive(Debug)]
@@ -20,6 +20,12 @@ pub struct CommitLog {
     idx: PathBuf,
     log: PathBuf,
     lock: PathBuf,
+}
+
+impl Drop for CommitLog {
+    fn drop(&mut self) {
+        self.close();
+    }
 }
 
 impl CommitLog {
@@ -36,11 +42,11 @@ impl CommitLog {
 
     /// tries to create a new commit log even the file lock exists
     /// If the file lock exists tries to delete it then invoke `CommitLog::create`
-    pub fn create_force(dir_str: &str) -> LogResult<Self> {
+    pub fn create_force(dir_str: &str) -> StoreResult<Self> {
         let mut lock = PathBuf::from(dir_str);
         lock.push(LOCK_FILE);
         if lock.exists() {
-            std::fs::remove_file(lock)?
+            remove_file(lock)?
         }
 
         CommitLog::create(dir_str)
@@ -60,7 +66,7 @@ impl CommitLog {
     /// if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {}
     /// ```
     ///
-    pub fn create(dir_str: &str) -> LogResult<Self> {
+    pub fn create(dir_str: &str) -> StoreResult<Self> {
         let dir = {
             let dir = PathBuf::from(dir_str);
             if dir.is_file() {
@@ -97,7 +103,7 @@ impl CommitLog {
             },
         })
     }
-    pub fn backup(&self) -> LogResult<()> {
+    pub fn backup(&self) -> StoreResult<()> {
         let idx = &self.idx;
         let log = &self.log;
         if !idx.exists() || !log.exists() {
@@ -113,7 +119,7 @@ impl CommitLog {
         copy_file(log.as_path(), log_bk.as_path())?;
         copy_file(idx.as_path(), idx_bk.as_path())
     }
-    pub fn push(&self, record: &Record) -> LogResult<usize>{
+    pub fn push(&self, record: &Record) -> StoreResult<usize> {
         let index = &Index::create(record.size_in_bytes());
         append_item(&self.idx, index)?;
         let r = append_item(&self.log, record)?;
@@ -124,7 +130,7 @@ impl CommitLog {
     /// # Arguments
     ///* `number_from_end` the position relative to the end. Should be more or equal 1
     /// Can return `LogError` if number less 1
-    pub fn read_all_from_end(&self, number_from_end: usize) -> LogResult<Vec<Record>> {
+    pub fn read_all_from_end(&self, number_from_end: usize) -> StoreResult<Vec<Record>> {
         let mut r_start_pos = 0;
         let mut r_number: u64;
         let mut records: Vec<Record> = Vec::new();
@@ -151,7 +157,7 @@ impl CommitLog {
     /// # Arguments
     ///* `number_from_end` the position relative to the end. Should be more or equal 1
     /// Can return `LogError` if number less 1
-    pub fn read_from_end(&self, pos_from_end: usize) -> LogResult<Record> {
+    pub fn read_from_end(&self, pos_from_end: usize) -> StoreResult<Record> {
         let mut r_start_pos = 0;
         let mut r_number: u64 = 0;
         for i in 1..=pos_from_end {
@@ -241,11 +247,11 @@ impl ToBytes for Index {
 pub trait FromBytes
     where Self: Sized
 {
-    fn from_bytes(bytes: &[u8]) -> LogResult<Self>;
+    fn from_bytes(bytes: &[u8]) -> StoreResult<Self>;
 }
 
 impl FromBytes for Record {
-    /// deserializing op
+    /// deserializer op
     /// # Arguments
     /// * `bytes` - bytes array to deserialize
     ///
@@ -259,7 +265,7 @@ impl FromBytes for Record {
     ///
     /// # Returns
     /// `Result` with Record or `LogError`
-    fn from_bytes(bytes: &[u8]) -> LogResult<Record> {
+    fn from_bytes(bytes: &[u8]) -> StoreResult<Record> {
         if bytes.is_empty() {
             return Err(LogError(String::from(" bytes are empty")));
         }
@@ -282,7 +288,7 @@ impl FromBytes for Record {
 }
 
 impl FromBytes for Index {
-    fn from_bytes(bytes: &[u8]) -> LogResult<Index> {
+    fn from_bytes(bytes: &[u8]) -> StoreResult<Index> {
         let val = u32::from_be_bytes(*convert_to_fixed(bytes));
         Ok(Index { val })
     }
@@ -337,7 +343,7 @@ impl Index {
             .collect()
     }
 
-    pub fn from_bytes_array(bytes: &[u8]) -> LogResult<Vec<Index>> {
+    pub fn from_bytes_array(bytes: &[u8]) -> StoreResult<Vec<Index>> {
         Ok(
             bytes
                 .chunks(4)
@@ -405,7 +411,7 @@ mod tests {
             for i in 1..101 {
                 let rec = &Record::delete_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
                 match c_log.push(rec) {
-                    Err(e) => panic!("{}",e.0),
+                    Err(e) => panic!("{}", e.0),
                     _ => continue
                 }
             }
@@ -460,7 +466,7 @@ mod tests {
             let start_time = time_now_millis();
             let rec = &Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 100]);
             for _ in 1..1000 {
-                if let Err(e)= c_log.push(rec) {
+                if let Err(e) = c_log.push(rec) {
                     panic!("{}", e.0);
                 }
             }

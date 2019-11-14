@@ -1,8 +1,6 @@
-
 mod store;
 
 fn main() {
-
 }
 
 
