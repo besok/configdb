@@ -16,19 +16,19 @@ pub type StoreResult<K> = Result<K, LogError>;
 
 /// default struct including into itself index and log
 #[derive(Debug)]
-pub struct CommitLog {
+pub struct TransactionLog {
     idx: PathBuf,
     log: PathBuf,
     lock: PathBuf,
 }
 
-impl Drop for CommitLog {
+impl Drop for TransactionLog {
     fn drop(&mut self) {
         self.close();
     }
 }
 
-impl CommitLog {
+impl TransactionLog {
     pub fn close(&self) -> io::Result<()> {
         remove_file(&self.lock)
     }
@@ -49,7 +49,7 @@ impl CommitLog {
             remove_file(lock)?
         }
 
-        CommitLog::create(dir_str)
+        TransactionLog::create(dir_str)
     }
 
     /// create a new commit log
@@ -78,7 +78,7 @@ impl CommitLog {
             dir
         };
 
-        Ok(CommitLog {
+        Ok(TransactionLog {
             lock: {
                 let mut lock = PathBuf::from(dir.clone());
                 lock.push(LOCK_FILE);
@@ -390,15 +390,15 @@ fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::commit_log::{Index, Record, RecordType, FromBytes, ToBytes, CommitLog, time_now_millis};
+    use crate::store::transaction_log::{Index, Record, RecordType, FromBytes, ToBytes, TransactionLog, time_now_millis};
 
 
     #[test]
     fn try_to_create_force_test() {
-        if let Ok(c_log) = CommitLog::create_force(r"test_data\force_create") {
-            if let Ok(_) = CommitLog::create(r"test_data\force_create") { panic!("") }
-            if let Err(_) = CommitLog::create_force(r"test_data\force_create") { panic!("") }
-            c_log.remove_files();
+        if let Ok(t_log) = TransactionLog::create_force(r"test_data\force_create") {
+            if let Ok(_) = TransactionLog::create(r"test_data\force_create") { panic!("") }
+            if let Err(_) = TransactionLog::create_force(r"test_data\force_create") { panic!("") }
+            t_log.remove_files();
         } else {
             panic!("")
         }
@@ -407,10 +407,10 @@ mod tests {
 
     #[test]
     fn read_all_log_test() {
-        if let Ok(c_log) = CommitLog::create(r"test_data\read_all") {
+        if let Ok(t_log) = TransactionLog::create(r"test_data\read_all") {
             for i in 1..101 {
                 let rec = &Record::delete_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
-                match c_log.push(rec) {
+                match t_log.push(rec) {
                     Err(e) => panic!("{}", e.0),
                     _ => continue
                 }
@@ -422,7 +422,7 @@ mod tests {
                 sizes.push(expected_size);
             }
 
-            match c_log.read_all_from_end(100) {
+            match t_log.read_all_from_end(100) {
                 Ok(records) => {
                     for (i, r) in records.iter().enumerate() {
                         assert_eq!(r.size_in_bytes(), *sizes.get(i).unwrap())
@@ -430,7 +430,7 @@ mod tests {
                 }
                 Err(e) => panic!(" e {:?}", e),
             }
-            c_log.remove_files();
+            t_log.remove_files();
         } else {
             panic!("panic")
         }
@@ -438,10 +438,10 @@ mod tests {
 
     #[test]
     fn read_log_test() {
-        if let Ok(c_log) = CommitLog::create(r"test_data\read_partially") {
+        if let Ok(t_log) = TransactionLog::create(r"test_data\read_partially") {
             for i in 1..101 {
                 let rec = &Record::insert_record(vec![1 as u8; i * 1], vec![1 as u8; i * 10]);
-                match c_log.push(rec) {
+                match t_log.push(rec) {
                     Err(e) => panic!("{}", e.0),
                     _ => continue
                 }
@@ -449,12 +449,12 @@ mod tests {
             for i in 1..101 {
                 let rev_i = 101 - i;
                 let expected_size = (rev_i * 1 + rev_i * 10 + 25) as u32;
-                match c_log.read_from_end(i) {
+                match t_log.read_from_end(i) {
                     Ok(r) => assert_eq!(r.size_in_bytes(), expected_size),
                     Err(e) => panic!(" e {:?}", e)
                 }
             }
-            c_log.remove_files();
+            t_log.remove_files();
         } else {
             panic!("panic")
         }
@@ -462,17 +462,17 @@ mod tests {
 
     #[test]
     fn dummy_performance_test() {
-        if let Ok(c_log) = CommitLog::create(r"test_data\performance") {
+        if let Ok(t_log) = TransactionLog::create(r"test_data\performance") {
             let start_time = time_now_millis();
             let rec = &Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 100]);
             for _ in 1..1000 {
-                if let Err(e) = c_log.push(rec) {
+                if let Err(e) = t_log.push(rec) {
                     panic!("{}", e.0);
                 }
             }
             let dur = time_now_millis() - start_time;
             println!("dur = {}", dur);
-            c_log.remove_files();
+            t_log.remove_files();
         } else {
             panic!("panic")
         }
@@ -480,16 +480,16 @@ mod tests {
 
     #[test]
     fn commit_log_test() {
-        if let Ok(c_log) = CommitLog::create(r"test_data\simple") {
+        if let Ok(t_log) = TransactionLog::create(r"test_data\simple") {
             let rec = Record::insert_record(vec![1 as u8; 10], vec![1 as u8; 20]);
 
-            if let Ok(size_res) = c_log.push(&rec) {
+            if let Ok(size_res) = t_log.push(&rec) {
                 assert_eq!(size_res, 55);
             } else {
                 panic!("panic")
             }
 
-            if let Err(e) = c_log.remove_files() {
+            if let Err(e) = t_log.remove_files() {
                 panic!("-> {}", e.to_string());
             }
         } else {

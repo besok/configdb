@@ -1,7 +1,7 @@
-use crate::store::commit_log::FromBytes;
+use crate::store::transaction_log::FromBytes;
 use std::cmp::Ordering;
 
-pub mod commit_log;
+pub mod transaction_log;
 pub mod files;
 pub mod b_tree;
 

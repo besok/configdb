@@ -23,11 +23,18 @@ use std::path::Path;
 use std::fs::{OpenOptions, File};
 use std::io::{Write, Read, BufReader};
 use std::{io, fs};
-use crate::store::commit_log::{LogError, FromBytes, ToBytes};
+use crate::store::transaction_log::{LogError, FromBytes, ToBytes};
 
 
 pub fn append_item<T: ToBytes>(p: &Path, item: &T) -> io::Result<usize> {
     append_bytes(p, item.to_bytes().as_slice())
+}
+fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
+    OpenOptions::new()
+        .write(true)
+        .append(true)
+        .open(p)?
+        .write(bytes)
 }
 
 pub fn copy_file(src: &Path, dst: &Path) -> Result<(), LogError> {
@@ -67,13 +74,7 @@ pub fn read_all_file_bytes(p: &Path) -> Result<Vec<u8>, LogError> {
     read_slice_bytes_internally(0, file_size, file_size, f)
 }
 
-fn append_bytes(p: &Path, bytes: &[u8]) -> io::Result<usize> {
-    OpenOptions::new()
-        .write(true)
-        .append(true)
-        .open(p)?
-        .write(bytes)
-}
+
 
 fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> Result<Vec<u8>, LogError> {
     if from >= file_size || to > file_size || from >= to {
@@ -86,7 +87,7 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
 
     let range = (to - from) as usize;
     let vec: Vec<u8> =
-        BufReader::with_capacity(1024, f)
+        BufReader::with_capacity(8*1024, f)
             .bytes()
             .skip(from as usize)
             .take(range)
@@ -105,7 +106,7 @@ fn read_slice_bytes_internally(from: u64, to: u64, file_size: u64, f: File) -> R
 mod tests {
     use crate::store::files::{read_from_end, read_slice, read_slice_from_end, read_all_file_bytes, append_item};
     use std::path::Path;
-    use crate::store::commit_log::{Index, Record};
+    use crate::store::transaction_log::{Index, Record};
     use std::fs::{File, remove_file};
 
     #[test]
