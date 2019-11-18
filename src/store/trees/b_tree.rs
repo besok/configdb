@@ -58,6 +58,9 @@ impl<'a, D> Cell<'a, D>
     pub fn set_pointer(&mut self, pointer: &'a Node<D>) {
         self.pointer = Some(pointer);
     }
+    pub fn compare(&self, next_val: &'a D) -> Option<Ordering> {
+        self.value.partial_cmp(next_val)
+    }
 }
 
 struct Node<'a, D>
@@ -80,6 +83,7 @@ mod tests {
     use crate::store::trees::b_tree::{NodeType, Cell, FixedSized};
     use crate::store::trees::b_tree::NodeType::{ROOT, LEAF, OTHER};
     use crate::store::transaction_log::{ToBytes, LogError, FromBytes};
+    use std::cmp::Ordering;
 
     #[test]
     fn node_type_test() {
@@ -109,15 +113,35 @@ mod tests {
 
     #[test]
     fn simple_cell_test() {
-        impl FixedSized for i32{
+        impl FixedSized for i32 {
             fn size_in_bytes(&self) -> u32 {
                 4
             }
         }
 
-        if let Some(cell) = Cell::new(10){
-            assert_eq!(cell.value,10);
+        if let Some(left) = Cell::new(10) {
+            assert_eq!(left.value, 10);
+            if let Some(right) = Cell::new(10) {
+                if let Some(eq) = (&left).compare(&right.value) {
+                    assert_eq!(eq,Ordering::Equal)
+                } else {
+                    panic!(" should be eq")
+                }
+            }
+            if let Some(right) = Cell::new(11) {
+                if let Some(ls) = (&left).compare(&right.value) {
+                    assert_eq!(ls,Ordering::Less)
+                } else {
+                    panic!(" should be less")
+                }
+            }
+            if let Some(right) = Cell::new(9) {
+                if let Some(gr) = (&left).compare(&right.value) {
+                    assert_eq!(gr,Ordering::Greater)
+                } else {
+                    panic!(" should be greater")
+                }
+            }
         }
-
     }
 }
