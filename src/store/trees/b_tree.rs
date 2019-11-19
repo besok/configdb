@@ -6,34 +6,47 @@ pub trait FixedSized: Sized {
 }
 
 
-enum Elem<'a, D, P>
-    where D: PartialOrd,
+enum Elem<'a, K, P>
+    where K: PartialOrd,
 {
     Cell {
-        pointer: Option<&'a Elem<'a, D, P>>,
-        value: D,
+        pointer: Option<&'a Elem<'a, K, P>>,
+        key: K,
     },
 
     EndCell {
         pointer: P,
-        value: D,
+        key: K,
     },
 
     Node {
-        cells: Vec<Elem<'a, D, P>>,
-        next_node: Option<&'a Elem<'a, D, P>>,
+        cells: Vec<Elem<'a, K, P>>,
+        next_node: Option<&'a Elem<'a, K, P>>,
     },
 
     Tree {
         br_factor: u32,
-        root: &'a Elem<'a, D, P>,
+        root: &'a Elem<'a, K, P>,
     },
+}
+
+impl<'a, K, P> Elem<'a, K, P>
+    where K: PartialOrd, {
+    pub fn new_cell(key: K, pointer: Option<&'a Elem<'a, K, P>>) -> Elem<'a, K, P> {
+        return Elem::Cell { key, pointer };
+    }
+    pub fn new_end_cell(key: K, pointer: P) -> Elem<'a, K, P> {
+        Elem::EndCell { key, pointer }
+    }
+    pub fn new_node(cells: Vec<Elem<'a, K, P>>,
+                    next_node: Option<&'a Elem<'a, K, P>>) -> Elem<'a, K, P> {
+        Elem::Node { cells, next_node }
+    }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use crate::store::trees::b_tree::{Cell, FixedSized};
     use crate::store::transaction_log::{ToBytes, LogError, FromBytes};
     use std::cmp::Ordering;
 
