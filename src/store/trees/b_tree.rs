@@ -1,130 +1,161 @@
 use std::cmp::Ordering;
 
-pub trait FixedSized: Sized {
-    fn size_in_bytes(&self) -> u32;
+enum Res {
+    Down(usize),
+    Found(usize),
+    None,
 }
 
-#[derive(Debug)]
-pub enum Elem<'a, K, P>
-    where K: PartialOrd,
+enum Node<'a, K, P>
+    where K: PartialOrd
 {
-    Cell {
-        pnt: Option<&'a Elem<'a, K, P>>,
-        key: &'a K,
-    },
-
-    EndCell {
-        pnt: &'a P,
-        key: &'a K,
-    },
-
     Node {
-        cells: Vec<&'a Elem<'a, K, P>>,
-        next_node: Option<&'a Elem<'a, K, P>>,
+        keys: Vec<K>,
+        links: Vec<Node<'a, K, P>>,
     },
-
-    Tree {
-        br_factor: u32,
-        root: &'a Elem<'a, K, P>,
+    Leaf {
+        keys: Vec<K>,
+        pts: Vec<P>,
+        link: Option<&'a Node<'a, K, P>>,
     },
-    Empty,
 }
 
-impl<'a, K, P> Elem<'a, K, P>
-    where K: PartialOrd,
+impl<'a, K, P> Node<'a, K, P>
+    where K: PartialOrd
 {
-    pub fn new_cell(key: &'a K,
-                    pnt: Option<&'a Elem<'a, K, P>>) -> Elem<'a, K, P> {
-        Elem::Cell { key, pnt }
+    fn key_len(&self) -> usize {
+        match self {
+            Node::Node { keys, .. } |
+            Node::Leaf { keys, .. } => keys.len(),
+        }
     }
-    pub fn new_end_cell(key: &'a K,
-                        pnt: &'a P) -> Elem<'a, K, P> {
-        Elem::EndCell { key, pnt }
+
+    fn get_node(&'a self, i: usize) -> Option<&'a Node<'a, K, P>> {
+        match &self {
+            Node::Node { links, .. } => links.get(i),
+            _ => None
+        }
     }
-    pub fn new_node(cells: Vec<&'a Elem<'a, K, P>>,
-                    next_node: Option<&'a Elem<'a, K, P>>) -> Elem<'a, K, P> {
-        Elem::Node { cells, next_node }
+    fn get_pointer(&'a self, i: usize) -> Option<&'a P> {
+        match &self {
+            Node::Leaf { pts, .. } => pts.get(i),
+            _ => None
+        }
     }
-    pub fn new_tree(br_factor: u32,
-                    root: &'a Elem<'a, K, P>) -> Elem<'a, K, P> {
-        match root {
-            Elem::Node { .. } => Elem::Tree { br_factor, root },
-            _ => Elem::Empty,
+
+    fn search(&self, key: &K) -> Res {
+        match self {
+            Node::Node { keys, .. } => {
+                for (i, k) in keys.iter().enumerate() {
+                    match key.partial_cmp(k) {
+                        Some(Ordering::Equal) |
+                        Some(Ordering::Less) => return Res::Down(i),
+                        _ => {}
+                    }
+                }
+                return Res::Down(self.key_len() - 1);
+            }
+            Node::Leaf { keys, .. } =>
+                for (i, k) in keys.iter().enumerate() {
+                    match key.partial_cmp(k) {
+                        Some(Ordering::Equal) => return Res::Found(i),
+                        Some(Ordering::Greater) => break,
+                        _ => {}
+                    }
+                },
+        }
+
+        return Res::None;
+    }
+}
+
+
+struct Tree<'a, K, P>
+    where K: PartialOrd
+{
+    diam: u32,
+    root: Node<'a, K, P>,
+}
+
+impl<'a, K, P> Tree<'a, K, P>
+    where K: PartialOrd
+{
+    pub fn search(&self, key: &K) -> Option<&P> {
+        let mut node = &self.root;
+        loop {
+            match node.search(key) {
+                Res::None => return None,
+                Res::Found(i) => return node.get_pointer(i),
+                Res::Down(i) => match node.get_node(i) {
+                    Some(nd) => node = nd,
+                    None => return None,
+                }
+            }
         }
     }
 }
 
-impl<'a, K, P> PartialOrd for Elem<'a, K, P>
-    where K: PartialOrd,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let cmp_keys = |key| match self {
-            Elem::Cell { key: src, .. } |
-            Elem::EndCell { key: src, .. } => src.partial_cmp(key),
-            _ => None,
-        };
-        match other {
-            Elem::Cell { key, .. } |
-            Elem::EndCell { key, .. } => cmp_keys(key),
-            _ => None,
-        }
-    }
-}
-
-impl<'a, K, P> PartialEq for Elem<'a, K, P>
-    where K: PartialOrd,
-{
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Elem::Tree { root: src, .. }, Elem::Tree { root: trg, .. }) => src == trg,
-            (Elem::Node { cells: src, .. }, Elem::Node { cells: trg, .. }) => src == trg,
-            (Elem::Cell { key: src, .. }, Elem::Cell { key: trg, .. }) => src == trg,
-            (Elem::EndCell { key: src, .. }, Elem::EndCell { key: trg, .. }) => src == trg,
-            _ => false
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
-    use crate::store::trees::b_tree::Elem;
+    use crate::store::trees::b_tree::Node::{Node, Leaf};
+    use crate::store::trees::b_tree::Tree;
 
     #[test]
-    fn simple_cell_test() {
-        let cell_one = Elem::<_, i8>::new_cell(&10, None);
-        let cell_two = Elem::new_cell(&10, None);
-        if let Some(Ordering::Equal) = cell_one.partial_cmp(&cell_two) {} else {
-            panic!("should be eq")
-        }
-        let cell_two = Elem::new_cell(&11, None);
-        if let Some(Ordering::Less) = cell_one.partial_cmp(&cell_two) {} else {
-            panic!("should be ls")
-        }
-        let cell_two = Elem::new_cell(&9, None);
-        if let Some(Ordering::Greater) = cell_one.partial_cmp(&cell_two) {} else {
-            panic!("should be gr")
-        }
-        let cell_two = Elem::new_node(vec![], None);
-        if let Some(_) = cell_one.partial_cmp(&cell_two) {
-            panic!("should be none")
-        }
-    }
+    fn simple_test() {
+        let node_8 = Leaf {
+            keys: vec![16, 19],
+            pts: vec![8, 8, 8],
+            link: None,
+        };
+        let node_7 = Leaf {
+            keys: vec![14, 15],
+            pts: vec![7, 7, 7],
+            link: None,
+        };
+        let node_6 = Leaf {
+            keys: vec![12],
+            pts: vec![6, 6, 6],
+            link: None,
+        };
+        let node_5 = Leaf {
+            keys: vec![9, 10, 11],
+            pts: vec![5, 5, 5],
+            link: None,
+        };
+        let node_4 = Leaf {
+            keys: vec![8],
+            pts: vec![4, 4, 4],
+            link: None,
+        };
+        let node_3 = Leaf {
+            keys: vec![7],
+            pts: vec![3, 3, 3],
+            link: None,
+        };
+        let node_2 = Leaf {
+            keys: vec![6],
+            pts: vec![2, 2, 2],
+            link: None,
+        };
+        let node_1 = Leaf {
+            keys: vec![2, 3, 4],
+            pts: vec![1, 1, 1],
+            link: None,
+        };
 
-    #[test]
-    fn simple_tree_test() {
-        let cell_end = Elem::<_, i8>::new_end_cell(&10, &1);
-        let leaf_node = Elem::new_node(vec![&cell_end],None);
-        let cell = Elem::<_, i8>::new_cell(&10, Some(&leaf_node));
+        let node_i_1 = Node { keys: vec![4, 6], links: vec![node_1, node_2, node_3] };
+        let node_i_2 = Node { keys: vec![8, 11], links: vec![node_4, node_5, node_6] };
+        let node_i_3 = Node { keys: vec![15, 19], links: vec![node_7, node_8]};
+        let root = Node { keys: vec![7,12], links: vec![node_i_1, node_i_2,node_i_3]};
 
-        let root_node = Elem::new_node(vec![&cell],None);
+        let tree = Tree { diam: 3, root };
 
-        let tree = Elem::new_tree(3, &root_node);
-        assert_eq!(
-            "Tree { br_factor: 3, root: Node \
-            { cells: [Cell { pnt: Some(Node \
-            { cells: [EndCell { pnt: 1, key: 10 }], \
-            next_node: None }), key: 10 }], next_node: None } }"
-                   ,format!("{:?}", tree))
+        if let Some(p) = (&tree).search(&10){
+            assert_eq!(p,&5)
+        }else{
+            panic!("")
+        }
+
     }
 }
