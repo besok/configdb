@@ -1,5 +1,7 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
+use std::mem;
+use std::ptr::replace;
 
 enum Res {
     Down(usize),
@@ -43,7 +45,24 @@ impl<'a, K, P> Node<'a, K, P>
             _ => None
         }
     }
-
+    fn insert_to_leaf(&mut self, key: K, p: P) -> Result<(), String> {
+        match self {
+            Node::Node { .. } => Err(String::from("only for leafs")),
+            Node::Leaf { keys, pts, .. } => {
+                for (i, el) in keys.iter().enumerate() {
+                    match key.partial_cmp(el) {
+                        Some(Ordering::Less) => {
+                            keys.insert(i, key);
+                            pts.insert(i, p);
+                        }
+                        Some(Ordering::Greater) => {}
+                        Some(Ordering::Equal) => {!},
+                        None => {}
+                    }
+                }
+            }
+        }
+    }
     fn search(&self, key: &K) -> Res {
         match self {
             Node::Node { keys, .. } => {
@@ -51,8 +70,8 @@ impl<'a, K, P> Node<'a, K, P>
                     match key.partial_cmp(k) {
                         Some(Ordering::Equal) |
                         Some(Ordering::Less) => {
-                            return Res::Down(i)
-                        },
+                            return Res::Down(i);
+                        }
                         _ => {}
                     }
                 }
@@ -149,16 +168,15 @@ mod tests {
 
         let node_i_1 = Node { keys: vec![4, 6], links: vec![node_1, node_2, node_3] };
         let node_i_2 = Node { keys: vec![8, 11], links: vec![node_4, node_5, node_6] };
-        let node_i_3 = Node { keys: vec![15, 19], links: vec![node_7, node_8]};
-        let root = Node { keys: vec![7,12], links: vec![node_i_1, node_i_2,node_i_3]};
+        let node_i_3 = Node { keys: vec![15, 19], links: vec![node_7, node_8] };
+        let root = Node { keys: vec![7, 12], links: vec![node_i_1, node_i_2, node_i_3] };
 
         let tree = Tree { diam: 3, root };
 
-        if let Some(p) = (&tree).search(&10){
-            assert_eq!(p,&5)
-        }else{
+        if let Some(p) = (&tree).search(&10) {
+            assert_eq!(p, &5)
+        } else {
             panic!("")
         }
-
     }
 }
