@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::fmt::Debug;
 
 enum Res {
     Down(usize),
@@ -7,7 +8,7 @@ enum Res {
 }
 
 enum Node<'a, K, P>
-    where K: PartialOrd
+    where K: PartialOrd + Debug
 {
     Node {
         keys: Vec<K>,
@@ -21,7 +22,7 @@ enum Node<'a, K, P>
 }
 
 impl<'a, K, P> Node<'a, K, P>
-    where K: PartialOrd
+    where K: PartialOrd + Debug
 {
     fn key_len(&self) -> usize {
         match self {
@@ -49,17 +50,19 @@ impl<'a, K, P> Node<'a, K, P>
                 for (i, k) in keys.iter().enumerate() {
                     match key.partial_cmp(k) {
                         Some(Ordering::Equal) |
-                        Some(Ordering::Less) => return Res::Down(i),
+                        Some(Ordering::Less) => {
+                            return Res::Down(i)
+                        },
                         _ => {}
                     }
                 }
-                return Res::Down(self.key_len() - 1);
+                return Res::Down(self.key_len());
             }
             Node::Leaf { keys, .. } =>
                 for (i, k) in keys.iter().enumerate() {
                     match key.partial_cmp(k) {
                         Some(Ordering::Equal) => return Res::Found(i),
-                        Some(Ordering::Greater) => break,
+                        Some(Ordering::Less) => break,
                         _ => {}
                     }
                 },
@@ -71,14 +74,14 @@ impl<'a, K, P> Node<'a, K, P>
 
 
 struct Tree<'a, K, P>
-    where K: PartialOrd
+    where K: PartialOrd + Debug
 {
     diam: u32,
     root: Node<'a, K, P>,
 }
 
 impl<'a, K, P> Tree<'a, K, P>
-    where K: PartialOrd
+    where K: PartialOrd + Debug
 {
     pub fn search(&self, key: &K) -> Option<&P> {
         let mut node = &self.root;
