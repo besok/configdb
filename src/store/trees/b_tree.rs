@@ -7,6 +7,7 @@ enum SearchRes {
     None,
 }
 
+#[derive(Debug)]
 enum InsertRes<'a, K, P>
     where K: PartialOrd + Debug
 {
@@ -15,7 +16,7 @@ enum InsertRes<'a, K, P>
     None,
 }
 
-
+#[derive(Debug)]
 enum Node<'a, K, P>
     where K: PartialOrd + Debug
 {
@@ -163,7 +164,7 @@ impl<'a, K, P> Tree<'a, K, P>
 
     fn search_leaf(&'a mut self, key: &K) -> InsertRes<'a, K, P> {
         match self.root.search_leaf(key) {
-            Some(e) => if e.keys().len() < self.diam - 1 {
+            Some(e) => if e.keys().len() < self.diam {
                 InsertRes::Ready(e)
             } else {
                 InsertRes::Full(e)
@@ -189,6 +190,9 @@ mod tests {
     use crate::store::trees::b_tree::Node::{Node, Leaf};
     use crate::store::trees::b_tree::Tree;
     use crate::store::trees::b_tree::InsertRes::Ready;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::borrow::{Borrow, BorrowMut};
 
     #[test]
     fn simple_find_test() {
@@ -377,16 +381,21 @@ mod tests {
 
         let mut tree = Tree { diam: 3, root };
 
-//        println!(" -- ");
-//        if let Some(_) = tree.search_leaf(&29) { panic!("") }
-//        println!(" -- ");
-//        if let Some(leaf_1) = tree.search_leaf(&9) {
-//            assert_eq!(leaf_1.keys(), &vec![9, 10, 11]);
-//        } else { panic!("") }
-//        println!(" -- ");
-        if let Ready(leaf_1) = tree.search_leaf(&14) {
-            assert_eq!(leaf_1.keys(), &vec![21, 23]);
-        } else { panic!("") }
+        match tree.search_leaf(&14) {
+            Ready(leaf_1) => {
+                assert_eq!(leaf_1.keys(), &vec![21, 23]);
+            }
+            e => {
+                panic!("{:?}",e) }
+        }
+        match tree.search_leaf(&14) {
+            Ready(leaf_1) => {
+                assert_eq!(leaf_1.keys(), &vec![21, 23]);
+            }
+            e => {
+                panic!("{:?}", e)
+            }
+        }
     }
 
     #[test]
@@ -435,18 +444,14 @@ mod tests {
         let node_i_1 = Node { keys: vec![4, 6], links: vec![node_1, node_2, node_3] };
         let node_i_2 = Node { keys: vec![8, 11], links: vec![node_4, node_5, node_6] };
         let node_i_3 = Node { keys: vec![23, 27], links: vec![node_7, node_8] };
+
         let root = Node { keys: vec![7, 12], links: vec![node_i_1, node_i_2, node_i_3] };
 
         let mut tree = Tree { diam: 3, root };
 
-        if let Ok(()) = tree.insert(22, 1) {
-            if let Some(p) = &tree.search(&22) {
-                assert_eq!(p, &1)
-            } else {
-                panic!("")
-            }
-        } else {
-            panic!("")
+        if let Err(e) = tree.insert(22, 1) {
+            panic!("{}",e)
         }
+
     }
 }
