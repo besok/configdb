@@ -97,9 +97,10 @@ impl<K, P> Tree<K, P>
         loop {
             match node.search(key) {
                 SearchRes::Down(i) =>
-                    if let Some(nd) = node.get_node(i) {
-                        node = nd
-                    } else { return None; },
+                    match node.get_node(i) {
+                        Some(nd) => node = nd,
+                        None => return None,
+                    },
                 SearchRes::Found(i) => return node.get_ptr(i),
                 SearchRes::None => return None,
             }
@@ -118,8 +119,8 @@ mod tests {
 
     #[test]
     fn simple_test() {
-        let leaf = Node::new_leaf(vec![1],vec![10]);
-        let node = Node::new_node(vec![2],vec![leaf]);
+        let leaf = Node::new_leaf(vec![1], vec![10]);
+        let node = Node::new_node(vec![2], vec![leaf]);
 
         let tree = Tree { diam: 0, root: Rc::new(node) };
 
