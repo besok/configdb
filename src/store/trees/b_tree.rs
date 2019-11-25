@@ -1,5 +1,8 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
+use std::cell::{RefCell, Cell, Ref};
+use std::borrow::Borrow;
+use std::rc::Rc;
 
 enum SearchRes {
     Down(usize),
@@ -8,121 +11,61 @@ enum SearchRes {
 }
 
 #[derive(Debug)]
-enum InsertRes<'a, K, P>
-    where K: PartialOrd + Debug
+enum InsertRes
 {
-    Ready(&'a mut Node<'a, K, P>),
-    Full(&'a mut Node<'a, K, P>),
     None,
 }
 
 #[derive(Debug)]
-enum Node<'a, K, P>
+enum Node<K, P>
     where K: PartialOrd + Debug
 {
     Node {
         keys: Vec<K>,
-        links: Vec<Node<'a, K, P>>,
+        links: Vec<Rc<Node<K, P>>>,
     },
     Leaf {
         keys: Vec<K>,
-        pts: Vec<P>,
-        link: Option<&'a Node<'a, K, P>>,
+        pts: Vec<Rc<P>>,
     },
 }
 
-impl<'a, K, P> Node<'a, K, P>
+impl<K, P> Node<K, P>
     where K: PartialOrd + Debug
 {
-    fn keys(&'a self) -> &'a Vec<K> {
-        match self {
-            Node::Node { keys, .. } |
-            Node::Leaf { keys, .. } => keys,
-        }
+    pub fn new_node(keys: Vec<K>, links: Vec<Node<K, P>>) -> Node<K, P> {
+        Node::Node { keys, links: links.into_iter().map(|x| Rc::new(x)).collect() }
     }
-    fn is_full(&self, br_f: usize) -> bool {
+    pub fn new_leaf(keys: Vec<K>, pts: Vec<P>) -> Node<K, P> {
+        Node::Leaf { keys, pts: pts.into_iter().map(|x| Rc::new(x)).collect() }
+    }
+
+    fn get_node(&self, i: usize) -> Option<Rc<Node<K, P>>> {
         match self {
-            Node::Node { keys, .. } => keys.len() == br_f - 1,
-            Node::Leaf { keys, .. } => keys.len() == br_f
+            Node::Node { links, .. } =>
+                links.get(i).map(|v| v.clone()),
+            Node::Leaf { .. } => None,
         }
     }
 
-
-    fn get_node_mut(&'a mut self, i: usize) -> Option<&'a mut Node<'a, K, P>> {
+    fn get_ptr(&self, i: usize) -> Option<Rc<P>> {
         match self {
-            Node::Node { links, .. } => links.get_mut(i),
-            _ => None
+            Node::Node { .. } => None,
+            Node::Leaf { pts, .. } => pts.get(i).map(|v| v.clone()),
         }
     }
-    fn get_node(&'a self, i: usize) -> Option<&'a Node<'a, K, P>> {
-        match &self {
-            Node::Node { links, .. } => links.get(i),
-            _ => None
-        }
-    }
-
-    fn get_pointer(&'a self, i: usize) -> Option<&'a P> {
-        match &self {
-            Node::Leaf { pts, .. } => pts.get(i),
-            _ => None
-        }
-    }
-    fn insert(&mut self, key: K, p: P) -> Result<(), String> {
-        match self {
-            Node::Node { .. } => Err(String::from("only for leafs")),
-            Node::Leaf { keys, pts, .. } => {
-                for (i, el) in keys.iter().enumerate() {
-                    match key.partial_cmp(el) {
-                        Some(Ordering::Less) => {
-                            keys.insert(i, key);
-                            pts.insert(i, p);
-                            return Ok(());
-                        }
-                        Some(Ordering::Greater) => {}
-                        Some(Ordering::Equal) => {
-                            keys[i] = key;
-                            pts[i] = p;
-                            return Ok(());
-                        }
-                        None => {}
-                    }
-                }
-                keys.push(key);
-                pts.push(p);
-                Ok(())
-            }
-        }
-    }
-    fn search_leaf(&'a mut self, key: &K) -> Option<&'a mut Node<'a, K, P>> {
-        let mut node = self;
-        loop {
-            match node {
-                Node::Leaf { .. } => return Some(node),
-                Node::Node { .. } =>
-                    match node.search(key) {
-                        SearchRes::Down(i) => match node.get_node_mut(i) {
-                            Some(nd) => node = nd,
-                            None => return None,
-                        },
-                        _ => return None
-                    }
-            }
-        }
-    }
-
     fn search(&self, key: &K) -> SearchRes {
         match self {
             Node::Node { keys, .. } => {
+                let mut last: usize = 0;
                 for (i, k) in keys.iter().enumerate() {
                     match key.partial_cmp(k) {
                         Some(Ordering::Equal) |
-                        Some(Ordering::Less) => {
-                            return SearchRes::Down(i);
-                        }
-                        _ => {}
+                        Some(Ordering::Less) => return SearchRes::Down(i),
+                        _ => last = i
                     }
                 }
-                return SearchRes::Down(keys.len());
+                return SearchRes::Down(last);
             }
             Node::Leaf { keys, .. } =>
                 for (i, k) in keys.iter().enumerate() {
@@ -138,320 +81,56 @@ impl<'a, K, P> Node<'a, K, P>
 }
 
 
-struct Tree<'a, K, P>
+struct Tree<K, P>
     where K: PartialOrd + Debug
 {
     diam: usize,
-    root: Node<'a, K, P>,
+    root: Rc<Node<K, P>>,
 }
 
-impl<'a, K, P> Tree<'a, K, P>
+impl<K, P> Tree<K, P>
     where K: PartialOrd + Debug
 {
-    pub fn search(&self, key: &K) -> Option<&P> {
-        let mut node = &self.root;
+    fn search(&self, key: &K) -> Option<Rc<P>> {
+        let mut node = self.root.clone();
+
         loop {
             match node.search(key) {
-                SearchRes::None => return None,
-                SearchRes::Found(i) => return node.get_pointer(i),
                 SearchRes::Down(i) =>
                     if let Some(nd) = node.get_node(i) {
                         node = nd
-                    } else { return None; }
+                    } else { return None; },
+                SearchRes::Found(i) => return node.get_ptr(i),
+                SearchRes::None => return None,
             }
         }
-    }
-
-    fn search_leaf(&'a mut self, key: &K) -> InsertRes<'a, K, P> {
-        match self.root.search_leaf(key) {
-            Some(e) => if e.keys().len() < self.diam {
-                InsertRes::Ready(e)
-            } else {
-                InsertRes::Full(e)
-            },
-            None => InsertRes::None,
-        }
-    }
-
-    fn insert(&'a mut self, key: K, ptr: P) -> Result<(), String> {
-        match self.search_leaf(&key) {
-            InsertRes::Ready(e) => return e.insert(key, ptr),
-            InsertRes::Full(_e) => {}
-            InsertRes::None => {}
-        }
-
-        Ok(())
     }
 }
 
 
 #[cfg(test)]
 mod tests {
-    use crate::store::trees::b_tree::Node::{Node, Leaf};
+    use crate::store::trees::b_tree::Node;
     use crate::store::trees::b_tree::Tree;
-    use crate::store::trees::b_tree::InsertRes::Ready;
     use std::cell::RefCell;
     use std::rc::Rc;
-    use std::borrow::{Borrow, BorrowMut};
+    use std::borrow::Borrow;
 
     #[test]
-    fn simple_find_test() {
-        let node_8 = Leaf {
-            keys: vec![16, 19],
-            pts: vec![8, 8, 8],
-            link: None,
-        };
-        let node_7 = Leaf {
-            keys: vec![14, 15],
-            pts: vec![7, 7, ],
-            link: None,
-        };
-        let node_6 = Leaf {
-            keys: vec![12],
-            pts: vec![6, ],
-            link: None,
-        };
-        let node_5 = Leaf {
-            keys: vec![9, 10, 11],
-            pts: vec![5, 5, 5],
-            link: None,
-        };
-        let node_4 = Leaf {
-            keys: vec![8],
-            pts: vec![4, ],
-            link: None,
-        };
-        let node_3 = Leaf {
-            keys: vec![7],
-            pts: vec![3, ],
-            link: None,
-        };
-        let node_2 = Leaf {
-            keys: vec![6],
-            pts: vec![2, ],
-            link: None,
-        };
-        let node_1 = Leaf {
-            keys: vec![2, 3, 4],
-            pts: vec![1, 1, 1],
-            link: None,
-        };
+    fn simple_test() {
+        let leaf = Node::new_leaf(vec![1],vec![10]);
+        let node = Node::new_node(vec![2],vec![leaf]);
 
-        let node_i_1 = Node { keys: vec![4, 6], links: vec![node_1, node_2, node_3] };
-        let node_i_2 = Node { keys: vec![8, 11], links: vec![node_4, node_5, node_6] };
-        let node_i_3 = Node { keys: vec![15, 19], links: vec![node_7, node_8] };
-        let root = Node { keys: vec![7, 12], links: vec![node_i_1, node_i_2, node_i_3] };
+        let tree = Tree { diam: 0, root: Rc::new(node) };
 
-        let tree = Tree { diam: 3, root };
 
-        if let Some(p) = (&tree).search(&10) {
-            assert_eq!(p, &5)
+        if let Some(v) = (&tree).search(&1) {
+            assert_eq!(v, Rc::new(10))
         } else {
             panic!("")
         }
-    }
-
-    #[test]
-    fn insert_test() {
-        let mut leaf = Leaf {
-            keys: vec![16, 19],
-            pts: vec![8, 8],
-            link: None,
-        };
-        let mut node = Node { keys: vec![4, 6], links: vec![] };
-
-        if let Ok(()) = node.insert(1, 1) {
-            panic!("should be err")
-        }
-
-        if let (
-            Ok(()),
-            Some(p),
-            vecs,
-        ) = (
-            leaf.insert(15, 9),
-            leaf.get_pointer(2),
-            leaf.keys(),
-        ) {
-            assert_eq!(p, &8);
-            assert_eq!(vecs, &vec![15, 16, 19]);
-        } else {
+        if let Some(_) = (&tree).search(&3) {
             panic!("")
         }
-
-        let mut leaf = Leaf {
-            keys: vec![16, 19],
-            pts: vec![8, 8],
-            link: None,
-        };
-
-        if let (Ok(()), Some(p), vecs, ) = (
-            leaf.insert(16, 9),
-            leaf.get_pointer(0),
-            leaf.keys(),
-        ) {
-            assert_eq!(p, &9);
-            assert_eq!(vecs, &vec![16, 19]);
-        } else {
-            panic!("")
-        }
-
-        let mut leaf = Leaf {
-            keys: vec![16, 19],
-            pts: vec![8, 8],
-            link: None,
-        };
-
-        if let (Ok(()), Some(p), vecs, ) = (
-            leaf.insert(17, 9),
-            leaf.get_pointer(1),
-            leaf.keys(),
-        ) {
-            assert_eq!(p, &9);
-            assert_eq!(vecs, &vec![16, 17, 19]);
-        } else {
-            panic!("")
-        }
-
-        let mut leaf = Leaf {
-            keys: vec![16, 19],
-            pts: vec![8, 8],
-            link: None,
-        };
-
-        if let (Ok(()), Some(p), vecs, ) = (
-            leaf.insert(21, 9),
-            leaf.get_pointer(2),
-            leaf.keys(),
-        ) {
-            assert_eq!(p, &9);
-            assert_eq!(vecs, &vec![16, 19, 21]);
-        } else {
-            panic!("")
-        }
-    }
-
-    #[test]
-    fn search_leaf() {
-        let node_8 = Leaf {
-            keys: vec![26, 27],
-            pts: vec![8, 8],
-            link: None,
-        };
-        let node_7 = Leaf {
-            keys: vec![21, 23],
-            pts: vec![7, 7, ],
-            link: None,
-        };
-        let node_6 = Leaf {
-            keys: vec![12],
-            pts: vec![6, ],
-            link: None,
-        };
-        let node_5 = Leaf {
-            keys: vec![9, 10, 11],
-            pts: vec![5, 5, 5],
-            link: None,
-        };
-        let node_4 = Leaf {
-            keys: vec![8],
-            pts: vec![4, ],
-            link: None,
-        };
-        let node_3 = Leaf {
-            keys: vec![7],
-            pts: vec![3, ],
-            link: None,
-        };
-        let node_2 = Leaf {
-            keys: vec![6],
-            pts: vec![2, ],
-            link: None,
-        };
-        let node_1 = Leaf {
-            keys: vec![2, 3, 4],
-            pts: vec![1, 1, 1],
-            link: None,
-        };
-
-        let node_i_1 = Node { keys: vec![4, 6], links: vec![node_1, node_2, node_3] };
-        let node_i_2 = Node { keys: vec![8, 11], links: vec![node_4, node_5, node_6] };
-        let node_i_3 = Node { keys: vec![23, 27], links: vec![node_7, node_8] };
-        let root = Node { keys: vec![7, 12], links: vec![node_i_1, node_i_2, node_i_3] };
-
-        let mut tree = Tree { diam: 3, root };
-
-        match tree.search_leaf(&14) {
-            Ready(leaf_1) => {
-                assert_eq!(leaf_1.keys(), &vec![21, 23]);
-            }
-            e => {
-                panic!("{:?}",e) }
-        }
-        match tree.search_leaf(&14) {
-            Ready(leaf_1) => {
-                assert_eq!(leaf_1.keys(), &vec![21, 23]);
-            }
-            e => {
-                panic!("{:?}", e)
-            }
-        }
-    }
-
-    #[test]
-    fn insert_to_tree_test() {
-        let node_8 = Leaf {
-            keys: vec![26, 27],
-            pts: vec![8, 8],
-            link: None,
-        };
-        let node_7 = Leaf {
-            keys: vec![21, 23],
-            pts: vec![7, 7, ],
-            link: None,
-        };
-        let node_6 = Leaf {
-            keys: vec![12],
-            pts: vec![6, ],
-            link: None,
-        };
-        let node_5 = Leaf {
-            keys: vec![9, 10, 11],
-            pts: vec![5, 5, 5],
-            link: None,
-        };
-        let node_4 = Leaf {
-            keys: vec![8],
-            pts: vec![4, ],
-            link: None,
-        };
-        let node_3 = Leaf {
-            keys: vec![7],
-            pts: vec![3, ],
-            link: None,
-        };
-        let node_2 = Leaf {
-            keys: vec![6],
-            pts: vec![2, ],
-            link: None,
-        };
-        let node_1 = Leaf {
-            keys: vec![2, 3, 4],
-            pts: vec![1, 1, 1],
-            link: None,
-        };
-
-        let node_i_1 = Node { keys: vec![4, 6], links: vec![node_1, node_2, node_3] };
-        let node_i_2 = Node { keys: vec![8, 11], links: vec![node_4, node_5, node_6] };
-        let node_i_3 = Node { keys: vec![23, 27], links: vec![node_7, node_8] };
-
-        let root = Node { keys: vec![7, 12], links: vec![node_i_1, node_i_2, node_i_3] };
-
-        let mut tree = Tree { diam: 3, root };
-
-        if let Err(e) = tree.insert(22, 1) {
-            panic!("{}",e)
-        }
-
     }
 }
