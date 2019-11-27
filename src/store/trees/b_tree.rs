@@ -1,7 +1,5 @@
 use std::cmp::Ordering;
 use std::fmt::Debug;
-use std::cell::{RefCell, Cell, Ref};
-use std::borrow::Borrow;
 use std::rc::Rc;
 
 enum SearchRes {
@@ -18,11 +16,11 @@ enum InsertRes
 
 #[derive(Debug)]
 enum Node<K, P>
-    where K: PartialOrd + Debug
+    where K: PartialOrd + Debug + Clone
 {
     Node {
         keys: Vec<K>,
-        links: Vec<Rc<Node<K, P>>>,
+        edges: Vec<Rc<Node<K, P>>>,
     },
     Leaf {
         keys: Vec<K>,
@@ -31,20 +29,19 @@ enum Node<K, P>
 }
 
 impl<K, P> Node<K, P>
-    where K: PartialOrd + Debug
+    where K: Ord + Debug + Clone
 {
-    pub fn new_node(keys: Vec<K>, links: Vec<Node<K, P>>) -> Node<K, P> {
-        Node::Node { keys, links: links.into_iter().map(|x| Rc::new(x)).collect() }
+    pub fn new_node(keys: Vec<K>, edges: Vec<Node<K, P>>) -> Node<K, P> {
+        Node::Node { keys, edges: edges.into_iter().map(|x| Rc::new(x)).collect() }
     }
     pub fn new_leaf(keys: Vec<K>, pts: Vec<P>) -> Node<K, P> {
         Node::Leaf { keys, pts: pts.into_iter().map(|x| Rc::new(x)).collect() }
     }
 
-
     fn get_node(&self, i: usize) -> Option<Rc<Node<K, P>>> {
         match self {
-            Node::Node { links, .. } =>
-                links.get(i).map(|v| v.clone()),
+            Node::Node { edges, .. } =>
+                edges.get(i).map(|v| v.clone()),
             Node::Leaf { .. } => None,
         }
     }
@@ -78,18 +75,34 @@ impl<K, P> Node<K, P>
         }
         return SearchRes::None;
     }
+    fn insert_key(&mut self, key: K) {
+        match self {
+            Node::Node { keys, .. } |
+            Node::Leaf { keys, .. } => {
+                if let Err(p) = keys.binary_search(&key){
+                    keys.insert(p,key)
+                }
+            }
+        }
+    }
+    fn get_keys(&self) -> Vec<K> {
+        match self {
+            Node::Node { keys, .. } |
+            Node::Leaf { keys, .. } => keys.to_vec()
+        }
+    }
 }
 
 
 struct Tree<K, P>
-    where K: PartialOrd + Debug
+    where K: Ord + Debug + Clone
 {
     diam: usize,
     root: Rc<Node<K, P>>,
 }
 
 impl<K, P> Tree<K, P>
-    where K: PartialOrd + Debug
+    where K: Ord + Debug + Clone
 {
     pub fn new(diam: usize, root: Node<K, P>) -> Self {
         Tree { diam, root: Rc::new(root) }
@@ -108,69 +121,69 @@ impl<K, P> Tree<K, P>
             }
         }
     }
-
-    fn build_path(&self, key: K) -> InsertStack<K,P> {
-        let mut node = self.root.clone();
-        let mut stack = InsertStack::new();
-        loop {
-            stack.push(node.clone());
-            match node.search(&key) {
-                SearchRes::Down(i) =>
-                    match node.get_node(i) {
-                        Some(nd) => node = nd,
-                        None => return stack
-                    },
-                SearchRes::Found(i) => return stack,
-                SearchRes::None => return stack
-            }
-        }
-    }
 }
 
-struct InsertStack<K, P>
-    where K: PartialOrd + Debug
+struct InsertStack<K, V>
+    where K: Ord + Debug + Clone
 {
-    values: Vec<Rc<Node<K, P>>>
+    nodes: Vec<*const Node<K, V>>
 }
 
-impl<K, P> InsertStack<K, P> where K: PartialOrd + Debug {
+impl<K, V> InsertStack<K, V>
+    where K: Ord + Debug + Clone
+{
     pub fn new() -> Self {
-        InsertStack { values: vec![] }
+        InsertStack { nodes: vec![] }
     }
-    pub fn push(&mut self, v: Rc<Node<K, P>>) {
-        self.values.push(v)
+
+    pub fn push(&mut self, node: &Node<K, V>) {
+        self.nodes.push(node)
     }
-    pub fn pop(&mut self) -> Option<Rc<Node<K, P>>> {
-        self.values.pop()
+    pub fn pop(&mut self) -> Option<*const Node<K, V>> {
+        self.nodes.pop()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::store::trees::b_tree::Node;
+    use crate::store::trees::b_tree::{Node, InsertStack};
     use crate::store::trees::b_tree::Tree;
-    use std::cell::RefCell;
     use std::rc::Rc;
-    use std::borrow::Borrow;
 
     #[test]
-    fn simple_test() {
+    fn simple_tree_test() {
         let tree = tree();
 
-        if let Some(_) = (&tree).search(&43){
+        if let Some(_) = (&tree).search(&43) {
             panic!("")
         }
-        if let Some(e) = (&tree).search(&4){
-            assert_eq!(e,Rc::new(4))
-        }else{
+        if let Some(e) = (&tree).search(&4) {
+            assert_eq!(e, Rc::new(4))
+        } else {
             panic!("")
         }
-        if let Some(e) = (&tree).search(&49){
-            assert_eq!(e,Rc::new(49))
-        }else{
+        if let Some(e) = (&tree).search(&49) {
+            assert_eq!(e, Rc::new(49))
+        } else {
             panic!("")
         }
     }
+
+    #[test]
+    fn simple_test() {
+        let leaf_1 = Node::new_leaf(vec![1, 2, 4], vec![1, 2, 4]);
+        let mut stack = InsertStack::new();
+        stack.push(&leaf_1);
+        unsafe {
+            if let Some(n) = stack.pop() {
+                let mut node = &*n;
+                println!("{:?}", node);
+//                node.insert_key(3);
+//                println!("{:?}", node.get_keys());
+            };
+        }
+    }
+
 
     fn tree() -> Tree<i32, i32> {
         let leaf_1 = Node::new_leaf(vec![1, 2, 4], vec![1, 2, 4]);
@@ -188,14 +201,5 @@ mod tests {
 
         let root = Node::new_node(vec![12, 44], vec![node_1, node_2, node_3]);
         Tree::new(4, root)
-    }
-
-    #[test]
-    fn simple_stack_test(){
-        let tr = tree();
-        let stack = (&tr).build_path(80);
-        for el in stack.values.iter(){
-            println!("{:?}",el)
-        }
     }
 }
