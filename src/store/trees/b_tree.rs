@@ -16,7 +16,8 @@ enum InsertRes
 
 #[derive(Debug)]
 enum Node<K, P>
-    where K: PartialOrd + Debug + Clone
+    where K: PartialOrd + Debug + Clone,
+          P: Debug
 {
     Node {
         keys: Vec<K>,
@@ -29,7 +30,8 @@ enum Node<K, P>
 }
 
 impl<K, P> Node<K, P>
-    where K: Ord + Debug + Clone
+    where K: Ord + Debug + Clone,
+          P: Debug
 {
     pub fn new_node(keys: Vec<K>, edges: Vec<Node<K, P>>) -> Node<K, P> {
         Node::Node { keys, edges: edges.into_iter().map(|x| Rc::new(x)).collect() }
@@ -79,8 +81,8 @@ impl<K, P> Node<K, P>
         match self {
             Node::Node { keys, .. } |
             Node::Leaf { keys, .. } => {
-                if let Err(p) = keys.binary_search(&key){
-                    keys.insert(p,key)
+                if let Err(p) = keys.binary_search(&key) {
+                    keys.insert(p, key)
                 }
             }
         }
@@ -95,21 +97,28 @@ impl<K, P> Node<K, P>
 
 
 struct Tree<K, P>
-    where K: Ord + Debug + Clone
+    where K: Ord + Debug + Clone,
+          P: Debug
 {
     diam: usize,
     root: Rc<Node<K, P>>,
 }
 
 impl<K, P> Tree<K, P>
-    where K: Ord + Debug + Clone
+    where K: Ord + Debug + Clone,
+          P: Debug
+
 {
     pub fn new(diam: usize, root: Node<K, P>) -> Self {
         Tree { diam, root: Rc::new(root) }
     }
     fn search(&self, key: &K) -> Option<Rc<P>> {
+        self.search_with(key, &|n| println!(" -> Node[keys:{:?}]", n.get_keys()))
+    }
+    fn search_with(&self, key: &K, calc: &dyn Fn(Rc<Node<K, P>>)) -> Option<Rc<P>> {
         let mut node = self.root.clone();
         loop {
+            calc(node.clone());
             match node.search(key) {
                 SearchRes::Down(i) =>
                     match node.get_node(i) {
@@ -123,23 +132,25 @@ impl<K, P> Tree<K, P>
     }
 }
 
-struct InsertStack<K, V>
-    where K: Ord + Debug + Clone
+struct InsertStack<'a, K, V>
+    where K: Ord + Debug + Clone,
+          V: Debug
 {
-    nodes: Vec<*const Node<K, V>>
+    nodes: Vec<&'a Node<K, V>>
 }
 
-impl<K, V> InsertStack<K, V>
-    where K: Ord + Debug + Clone
+impl<'a, K, V> InsertStack<'a, K, V>
+    where K: Ord + Debug + Clone,
+          V: Debug
 {
     pub fn new() -> Self {
         InsertStack { nodes: vec![] }
     }
 
-    pub fn push(&mut self, node: &Node<K, V>) {
+    pub fn push(&mut self, node: &'a Node<K, V>) {
         self.nodes.push(node)
     }
-    pub fn pop(&mut self) -> Option<*const Node<K, V>> {
+    pub fn pop(&mut self) -> Option<&Node<K, V>> {
         self.nodes.pop()
     }
 }
@@ -149,6 +160,7 @@ mod tests {
     use crate::store::trees::b_tree::{Node, InsertStack};
     use crate::store::trees::b_tree::Tree;
     use std::rc::Rc;
+    use std::collections::BTreeMap;
 
     #[test]
     fn simple_tree_test() {
@@ -174,14 +186,12 @@ mod tests {
         let leaf_1 = Node::new_leaf(vec![1, 2, 4], vec![1, 2, 4]);
         let mut stack = InsertStack::new();
         stack.push(&leaf_1);
-        unsafe {
-            if let Some(n) = stack.pop() {
-                let mut node = &*n;
-                println!("{:?}", node);
-//                node.insert_key(3);
+        if let Some(n) = stack.pop() {
+            let mut node = n;
+            println!("{:?}", node);
+//            node.insert_key(3);
 //                println!("{:?}", node.get_keys());
-            };
-        }
+        };
     }
 
 
