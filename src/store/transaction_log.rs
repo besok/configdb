@@ -62,7 +62,7 @@ impl TransactionLog {
     ///
     /// # Examples
     ///
-    /// ```
+    /// ```rust
     /// if let Ok(c_log) = CommitLog::create(r"c:\projects\configdb\data") {}
     /// ```
     ///
