@@ -306,9 +306,9 @@ mod tests {
         let _ = list.insert(2, 2);
 
 
-        let res = list.search(&60);
+        let res = list.search(&10);
         assert_eq!(res.is_some(), true);
-        assert_eq!(res, Some(200));
+        assert_eq!(res, Some(10));
     }
 
 
