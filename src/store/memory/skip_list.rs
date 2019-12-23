@@ -13,7 +13,7 @@ use crate::store::memory::skip_list::PrevSearchStep::FromAbove;
 use crate::store::memory::skip_list::PrevSearchStep::FromLeft;
 use crate::store::memory::skip_list::PrevSearchStep::FromHead;
 use std::cell::RefCell;
-use std::fmt::Debug;
+use std::fmt::{Debug, Formatter, Error};
 use std::net::Shutdown::Read;
 
 type SkipNode<K: Ord + Clone + Debug, V: Clone + Debug> = Rc<RefCell<Node<K, V>>>;
@@ -234,7 +234,7 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> SkipList<K, V> {
         if self.head.borrow().next.is_none() {
             let mut curr_node = Node::new_with(key.clone(), val.clone(), self.levels);
             &self.head.borrow_mut().try_upd_head(curr_node.clone());
-            let mut cur_lvl = self.levels-1;
+            let mut cur_lvl = self.levels - 1;
 
             while cur_lvl > 0 {
                 let under_node = Node::new_with(key.clone(), val.clone(), cur_lvl);
@@ -363,12 +363,6 @@ mod tests {
         let _ = list.insert(80, 800);
         let _ = list.insert(10, 10);
         let _ = list.insert(70, 70);
-//        let _ = list.insert(40, 40);
-//        let _ = list.insert(30, 30);
-//        let _ = list.insert(50, 50);
-//        let _ = list.insert(60, 60);
-//        let _ = list.insert(15, 15);
-//        let _ = list.insert(80, 80);
         let _ = list.insert(2, 2);
 
         let res = list.search(&10);
