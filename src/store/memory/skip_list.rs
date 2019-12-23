@@ -9,8 +9,12 @@ use crate::store::memory::skip_list::SearchResult::NotFound;
 use crate::store::memory::skip_list::SearchResult::Down;
 use crate::store::memory::skip_list::SearchResult::Forward;
 use crate::store::memory::skip_list::SearchResult::Found;
+use crate::store::memory::skip_list::PrevSearchStep::FromAbove;
+use crate::store::memory::skip_list::PrevSearchStep::FromLeft;
+use crate::store::memory::skip_list::PrevSearchStep::FromHead;
 use std::cell::RefCell;
 use std::fmt::Debug;
+use std::net::Shutdown::Read;
 
 type SkipNode<K: Ord + Clone + Debug, V: Clone + Debug> = Rc<RefCell<Node<K, V>>>;
 
@@ -79,9 +83,15 @@ struct Node<K: Ord + Clone + Debug, V: Clone + Debug> {
     under: Option<SkipNode<K, V>>,
 }
 
+enum PrevSearchStep {
+    FromAbove,
+    FromLeft,
+    FromHead,
+}
+
 enum SearchResult<K: Ord + Clone + Debug, V: Clone + Debug> {
     Forward(SkipNode<K, V>),
-    Down((SkipNode<K, V>)),
+    Down(SkipNode<K, V>),
     NotFound,
     Found(V),
 }
@@ -125,7 +135,7 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> Node<K, V> {
             None => {
                 node.borrow_mut().next = Some(next_node.clone());
                 next_node.borrow_mut().prev = Some(node.clone());
-            },
+            }
             Some(old_next) => {
                 node.borrow_mut().next = Some(next_node.clone());
                 next_node.borrow_mut().prev = Some(node.clone());
@@ -151,26 +161,27 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> Node<K, V> {
     }
 
 
-    fn compare(&self, key: &K) -> SearchResult<K, V> {
-        match (self.key.partial_cmp(key), self.level) {
-            (Some(Equal), _) => SearchResult::Found(self.val.clone()),
-            (Some(Less), e) if e > 1 =>
+    fn compare(&self, key: &K, prev_step: PrevSearchStep) -> SearchResult<K, V> {
+        match self.key.partial_cmp(key) {
+            Some(Equal) => SearchResult::Found(self.val.clone()),
+            Some(Less) =>
                 match (&self.next, &self.under) {
                     (Some(n), _) => Forward(n.clone()),
                     (None, Some(under)) => Down(under.clone()),
                     (None, None) => NotFound,
                 },
-            (Some(Greater), e) if e > 1 => match &self.prev {
-                Some(prev) => match &RefCell::borrow(prev).under {
-                    Some(under) => Down(under.clone()),
-                    None => NotFound
+            Some(Greater) =>
+                match (&self.prev, &self.under) {
+                    (Some(prev), _) =>
+                        match (RefCell::borrow(prev).under.as_ref(), prev_step) {
+                            (Some(prev_under), FromLeft) => Down(prev_under.clone()),
+                            (_, FromAbove) => Down(prev.clone()),
+                            (_, _) => NotFound
+                        },
+                    (None, Some(under)) => Down(under.clone()),
+                    (None, None) => NotFound
                 },
-                None => match &self.under {
-                    Some(under) => SearchResult::Down(under.clone()),
-                    None => NotFound,
-                },
-            },
-            (_, _) => NotFound
+            None => NotFound
         }
     }
     fn set_val_to_node(node: SkipNode<K, V>, val: V) {
@@ -192,12 +203,6 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> Node<K, V> {
             Some(Ordering::Greater) => Node::set_prev(left.clone(), right.clone()),
             _ => (),
         }
-    }
-    fn is_under(node: Rc<RefCell<Node<K, V>>>) -> bool {
-        RefCell::borrow(&node.clone()).under.is_some()
-    }
-    fn get_under(node: Rc<RefCell<Node<K, V>>>) -> Rc<RefCell<Node<K, V>>> {
-        RefCell::borrow(&node).under.as_ref().unwrap().clone()
     }
 }
 
@@ -229,7 +234,7 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> SkipList<K, V> {
         if self.head.borrow().next.is_none() {
             let mut curr_node = Node::new_with(key.clone(), val.clone(), self.levels);
             &self.head.borrow_mut().try_upd_head(curr_node.clone());
-            let mut cur_lvl = self.levels - 1;
+            let mut cur_lvl = self.levels-1;
 
             while cur_lvl > 0 {
                 let under_node = Node::new_with(key.clone(), val.clone(), cur_lvl);
@@ -241,11 +246,15 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> SkipList<K, V> {
         } else {
             let first_node = self.first();
             let mut curr_node = first_node.as_ref().unwrap().clone();
+            let mut prev_step = PrevSearchStep::FromHead;
             let mut path_stack: Vec<Rc<RefCell<Node<K, V>>>> = vec![];
             loop {
-                let cmp = RefCell::borrow(&curr_node).compare(&key);
-                match cmp {
-                    Forward(next) => curr_node = next.clone(),
+                let cmp_with_curr_node = RefCell::borrow(&curr_node).compare(&key, prev_step);
+                match cmp_with_curr_node {
+                    Forward(next) => {
+                        curr_node = next.clone();
+                        prev_step = FromLeft;
+                    }
                     NotFound => {
                         let mut new_low_node = Node::new_with(key.clone(), val.clone(), 1);
 
@@ -257,9 +266,9 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> SkipList<K, V> {
                             let new_node = Node::new_with(key.clone(), val.clone(), curr_lvl);
 
                             new_node.borrow_mut().set_under(Some(new_low_node.clone()));
-                            let neigh_node = path_stack.pop().unwrap();
-
-                            Node::connect(new_node.clone(), neigh_node.clone());
+                            if let Some(neigh_node) = path_stack.pop() {
+                                Node::connect(new_node.clone(), neigh_node.clone());
+                            }
 
                             new_low_node = new_node.clone();
                             curr_lvl = curr_lvl + 1;
@@ -269,8 +278,9 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> SkipList<K, V> {
                         return None;
                     }
                     Down(under) => {
-                        path_stack.push(under.clone());
+                        path_stack.push(curr_node.clone());
                         curr_node = under.clone();
+                        prev_step = FromAbove;
                     }
                     Found(old_v) => {
                         curr_node.borrow_mut().set_value(val);
@@ -284,10 +294,18 @@ impl<K: Ord + Clone + Debug, V: Clone + Debug> SkipList<K, V> {
 
     fn search_in(&self, node: Rc<RefCell<Node<K, V>>>, key: &K) -> Option<V> {
         let mut curr_node = node.clone();
+        let mut prev_step = PrevSearchStep::FromHead;
         loop {
-            match RefCell::borrow(&curr_node.clone()).compare(key) {
+            match RefCell::borrow(&curr_node.clone()).compare(key, prev_step) {
                 NotFound => return None,
-                Forward(n) | Down(n) => curr_node = n.clone(),
+                Forward(n) => {
+                    curr_node = n.clone();
+                    prev_step = FromLeft;
+                }
+                Down(n) => {
+                    curr_node = n.clone();
+                    prev_step = FromAbove;
+                }
                 Found(v) => return Some(v),
             }
         }
@@ -327,8 +345,6 @@ mod tests {
         assert_eq!(m_p_k, 10);
         assert_eq!(m_n_k, 30);
         assert_eq!(r_p_k, 20);
-
-
     }
 
 
@@ -340,23 +356,20 @@ mod tests {
 
     #[test]
     fn skip_list_test() {
-        let mut list: SkipList<u64, u64> = SkipList::with_capacity(4000_000_000);
-        let _ = list.insert(20, 20);
-        let _ = list.insert(20, 20);
-        let _ = list.insert(10, 10);
-        let _ = list.insert(10, 10);
-        let _ = list.insert(30, 30);
-        let _ = list.insert(40, 40);
-        let _ = list.insert(50, 50);
-        let _ = list.insert(1, 1);
-        let _ = list.insert(15, 15);
+        let mut list: SkipList<u64, u64> = SkipList::with_capacity(16);
         let _ = list.insert(200, 200);
-        let _ = list.insert(60, 60);
-        let _ = list.insert(70, 70);
-        let _ = list.insert(80, 80);
+        let _ = list.insert(20, 20);
+        let _ = list.insert(1, 1);
         let _ = list.insert(80, 800);
+        let _ = list.insert(10, 10);
+        let _ = list.insert(70, 70);
+//        let _ = list.insert(40, 40);
+//        let _ = list.insert(30, 30);
+//        let _ = list.insert(50, 50);
+//        let _ = list.insert(60, 60);
+//        let _ = list.insert(15, 15);
+//        let _ = list.insert(80, 80);
         let _ = list.insert(2, 2);
-
 
         let res = list.search(&10);
         assert_eq!(res.is_some(), true);
