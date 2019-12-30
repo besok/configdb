@@ -13,30 +13,33 @@ use crate::store::memory::skip_list::PrevSearchStep::FromAbove;
 use crate::store::memory::skip_list::PrevSearchStep::FromLeft;
 use crate::store::memory::skip_list::PrevSearchStep::FromHead;
 use std::cell::RefCell;
-use std::fmt::{Debug, Formatter, Error, Display};
+use std::fmt::{Debug, Formatter, Error};
 use std::net::Shutdown::Read;
 
-type SkipNode<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> = Rc<RefCell<Node<K, V>>>;
+
+type SkipNode<K: Ord + Clone, V: Clone> = Rc<RefCell<Node<K, V>>>;
 
 struct LevelGenerator {
-    total: usize,
     p: f64,
     sampler: Uniform<f64>,
     rand: ThreadRng,
 }
 
 impl LevelGenerator {
-    fn new(total: usize) -> Self {
-        let sampler = Uniform::new(0.0f64, 1.0);
-        let rand = rand::thread_rng();
-        LevelGenerator { total, sampler, rand, p: 0.5 }
+    fn new() -> Self {
+        LevelGenerator {
+            sampler: Uniform::new(0.0f64, 1.0),
+            rand: rand::thread_rng(),
+            p: 0.5,
+        }
     }
-    fn random(&mut self) -> usize {
+    fn random(&mut self, total: usize) -> usize {
         let mut height = 0;
         let mut temp = self.p;
-        let level = 1.0 - self.sampler.sample(&mut self.rand);
+        let level =
+            1.0 - self.sampler.sample(&mut self.rand);
 
-        while temp > level && height + 1 < self.total {
+        while temp > level && height + 1 < total {
             height += 1;
             temp *= self.p
         }
@@ -44,41 +47,33 @@ impl LevelGenerator {
     }
 }
 
-#[derive(Debug)]
-struct Head<K, V>
-    where K: Ord + Clone + Debug + Display,
-          V: Clone + Debug + Display {
-    next: Option<Rc<RefCell<Node<K, V>>>>
+struct Head<K: Ord + Clone, V: Clone> {
+    next: Option<SkipNode<K, V>>
 }
 
-impl<K, V> Head<K, V>
-    where K: Ord + Clone + Debug + Display,
-          V: Clone + Debug + Display {
-    pub fn new(next: Option<Rc<RefCell<Node<K, V>>>>) -> Self {
+impl<K: Ord + Clone, V: Clone> Head<K, V> {
+    pub fn new(next: Option<SkipNode<K, V>>) -> Self {
         Head { next }
     }
     pub fn empty() -> Self {
         Head { next: None }
     }
-
-
-    fn try_upd_head(&mut self, node: Rc<RefCell<Node<K, V>>>) {
+    fn try_upd_head(&mut self, node: SkipNode<K, V>) {
         match &self.next {
             None => self.next = Some(node),
-            Some(n) => {
-                if let Some(Greater) = Node::compare_by_key(n.clone(), node.clone()) {
-                    match Node::compare_by_level(n.clone(), node.clone()) {
+            Some(n) =>
+                if let Some(Greater) = Node::cmp_by_key(n.clone(), node.clone()) {
+                    match Node::cmp_by_lvl(n.clone(), node.clone()) {
                         Some(Less) | Some(Equal) => self.next = Some(node),
                         _ => ()
                     }
-                }
-            }
+                },
         }
     }
 }
 
-#[derive(Debug)]
-struct Node<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> {
+
+struct Node<K: Ord + Clone, V: Clone> {
     key: K,
     val: V,
     level: usize,
@@ -87,66 +82,46 @@ struct Node<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> {
     under: Option<SkipNode<K, V>>,
 }
 
-#[derive(Debug)]
 enum PrevSearchStep {
     FromAbove,
     FromLeft,
     FromHead,
 }
 
-#[derive(Debug)]
-enum SearchResult<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> {
+
+enum SearchResult<K: Ord + Clone, V: Clone> {
     Forward(SkipNode<K, V>),
     Backward(SkipNode<K, V>),
     Down(SkipNode<K, V>),
-    NotFound,
     Found(V),
+    NotFound,
 }
 
-impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> ToString for Node<K, V> {
-    fn to_string(&self) -> String {
-        let mut next = match &self.next {
-            Some(n) => RefCell::borrow(n).to_string(),
-            None => String::from("none"),
-        };
-        let mut under = match &self.under {
-            Some(n) => String::from("none"),
-            None => String::from("none"),
-        };
+impl<K: Ord + Clone, V: Clone> Node<K, V> {}
 
-        let mut prev = match &self.prev {
-            Some(n) => format!("node:(key:{})", RefCell::borrow(n).key),
-            None => String::from("none"),
-        };
-
-        format!("Node(k:{},v:{}, lev:{}, next:{},prev:{},under:{})",
-                self.key,
-                self.val,
-                self.level,
-                next, prev, under
-        )
-    }
-}
-
-impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> Node<K, V> {
+impl<K: Ord + Clone, V: Clone> Node<K, V> {
     fn new(key: K, val: V, level: usize) -> Self {
         Node { key, val, level, under: None, next: None, prev: None }
     }
     fn new_with(key: K, val: V, level: usize) -> SkipNode<K, V> {
         Rc::new(RefCell::new(Node::new(key, val, level)))
     }
-    fn create_in_list(key: K, val: V, total_lvl: usize, curr_node: SkipNode<K, V>, deep_stack: &mut Vec<SkipNode<K, V>>) -> SkipNode<K,V>{
+    fn new_in_list(key: K,
+                   val: V,
+                   total_lvl: usize,
+                   curr_node: Option<SkipNode<K, V>>,
+                   path: &mut Vec<SkipNode<K, V>>) -> SkipNode<K, V> {
         let mut new_low_node = Node::new_with(key.clone(), val.clone(), 1);
-
-        Node::connect(curr_node.clone(), new_low_node.clone());
+        if curr_node.is_some() {
+            Node::connect_new(curr_node.unwrap().clone(), new_low_node.clone());
+        }
 
         let mut curr_lvl: usize = 2;
         while curr_lvl <= total_lvl {
             let new_node = Node::new_with(key.clone(), val.clone(), curr_lvl);
-
-            Node::set_under_to_node(new_node.clone(), new_low_node.clone());
-            if let Some(neigh_node) = deep_stack.pop() {
-                Node::connect(neigh_node.clone(), new_node.clone());
+            RefCell::borrow_mut(&new_node).under = Some(new_low_node);
+            if let Some(neigh_node) = path.pop() {
+                Node::connect_new(neigh_node.clone(), new_node.clone());
             }
 
             new_low_node = new_node.clone();
@@ -155,67 +130,19 @@ impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> Node<K, V> {
 
         new_low_node.clone()
     }
-    fn set_under(&mut self, under: Option<SkipNode<K, V>>) {
-        self.under = under;
-    }
+}
 
-    fn set_under_to_node(node: SkipNode<K, V>, under: SkipNode<K, V>) {
-        RefCell::borrow_mut(&node).set_under(Some(under))
+impl<K: Ord + Clone, V: Clone> Node<K, V> {
+    fn cmp_by_key(left: SkipNode<K, V>, right: SkipNode<K, V>) -> Option<Ordering> {
+        let right_key = &RefCell::borrow(&right).key;
+        let left_key = &RefCell::borrow(&left).key;
+        left_key.partial_cmp(right_key)
     }
-
-    fn value(&self) -> V {
-        self.val.clone()
+    fn cmp_by_lvl(left: SkipNode<K, V>, right: SkipNode<K, V>) -> Option<Ordering> {
+        let right_key = &RefCell::borrow(&right).level;
+        let left_key = &RefCell::borrow(&left).level;
+        left_key.partial_cmp(right_key)
     }
-
-    fn set_value(&mut self, val: V) {
-        self.val = val.clone();
-        if let Some(under) = &self.under {
-            RefCell::borrow_mut(under).set_value(val.clone());
-        }
-    }
-
-    fn next(node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
-        node.borrow().next.as_ref().map(|n| n.clone())
-    }
-    fn prev(node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
-        node.borrow().prev.as_ref().map(|n| n.clone())
-    }
-
-    fn node_to_string(node: SkipNode<K, V>) -> String {
-        RefCell::borrow(&node).to_string()
-    }
-
-    fn set_next(node: SkipNode<K, V>, next_node: SkipNode<K, V>) {
-        match Node::next(node.clone()) {
-            None => {
-                node.borrow_mut().next = Some(next_node.clone());
-                next_node.borrow_mut().prev = Some(node.clone());
-            }
-            Some(old_next) => {
-                node.borrow_mut().next = Some(next_node.clone());
-                next_node.borrow_mut().prev = Some(node.clone());
-                next_node.borrow_mut().next = Some(old_next.clone());
-                old_next.borrow_mut().prev = Some(next_node.clone());
-            }
-        }
-    }
-
-    fn set_prev(node: SkipNode<K, V>, prev_node: SkipNode<K, V>) {
-        match Node::prev(node.clone()) {
-            None => {
-                node.borrow_mut().prev = Some(prev_node.clone());
-                prev_node.borrow_mut().next = Some(node.clone());
-            }
-            Some(old_prev) => {
-                node.borrow_mut().prev = Some(prev_node.clone());
-                prev_node.borrow_mut().next = Some(node.clone());
-                prev_node.borrow_mut().prev = Some(old_prev.clone());
-                old_prev.borrow_mut().next = Some(prev_node.clone());
-            }
-        }
-    }
-
-
     fn compare(&self, key: &K, prev_step: &PrevSearchStep) -> SearchResult<K, V> {
         match self.key.partial_cmp(key) {
             Some(Equal) => SearchResult::Found(self.val.clone()),
@@ -239,44 +166,75 @@ impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> Node<K, V> {
             None => NotFound
         }
     }
-    fn set_val_to_node(node: SkipNode<K, V>, val: V) {
-        node.borrow_mut().set_value(val);
+}
+
+impl<K: Ord + Clone, V: Clone> Node<K, V> {
+    fn get_next(node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
+        node.borrow().next.as_ref().map(|n| n.clone())
     }
-    fn compare_by_key(left: SkipNode<K, V>, right: SkipNode<K, V>) -> Option<Ordering> {
-        let right_key = &RefCell::borrow(&right).key;
-        let left_key = &RefCell::borrow(&left).key;
-        left_key.partial_cmp(right_key)
+    fn get_prev(node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
+        node.borrow().prev.as_ref().map(|n| n.clone())
     }
-    fn compare_by_level(left: SkipNode<K, V>, right: SkipNode<K, V>) -> Option<Ordering> {
-        let right_key = &RefCell::borrow(&right).level;
-        let left_key = &RefCell::borrow(&left).level;
-        left_key.partial_cmp(right_key)
+    fn set_next(node: SkipNode<K, V>, next_node: SkipNode<K, V>) {
+        match Node::get_next(node.clone()) {
+            None => {
+                node.borrow_mut().next = Some(next_node.clone());
+                next_node.borrow_mut().prev = Some(node.clone());
+            }
+            Some(old_next) => {
+                node.borrow_mut().next = Some(next_node.clone());
+                next_node.borrow_mut().prev = Some(node.clone());
+                next_node.borrow_mut().next = Some(old_next.clone());
+                old_next.borrow_mut().prev = Some(next_node.clone());
+            }
+        }
     }
-    fn connect(node: SkipNode<K, V>, new_node: SkipNode<K, V>) {
-        match Node::compare_by_key(node.clone(), new_node.clone()) {
+    fn set_prev(node: SkipNode<K, V>, prev_node: SkipNode<K, V>) {
+        match Node::get_prev(node.clone()) {
+            None => {
+                node.borrow_mut().prev = Some(prev_node.clone());
+                prev_node.borrow_mut().next = Some(node.clone());
+            }
+            Some(old_prev) => {
+                node.borrow_mut().prev = Some(prev_node.clone());
+                prev_node.borrow_mut().next = Some(node.clone());
+                prev_node.borrow_mut().prev = Some(old_prev.clone());
+                old_prev.borrow_mut().next = Some(prev_node.clone());
+            }
+        }
+    }
+    fn connect_new(node: SkipNode<K, V>, new_node: SkipNode<K, V>) {
+        match Node::cmp_by_key(node.clone(), new_node.clone()) {
             Some(Ordering::Less) => Node::set_next(node.clone(), new_node.clone()),
             Some(Ordering::Greater) => Node::set_prev(node.clone(), new_node.clone()),
             _ => (),
         }
     }
+    fn set_value(&mut self, val: V) {
+        self.val = val.clone();
+        if let Some(under) = &self.under {
+            RefCell::borrow_mut(under).set_value(val.clone());
+        }
+    }
 }
 
-struct SkipList<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> {
+struct SkipList<K: Ord + Clone, V: Clone> {
     head: RefCell<Head<K, V>>,
     levels: usize,
+    size: usize,
     generator: LevelGenerator,
 }
 
-impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> SkipList<K, V> {
+impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     pub fn new() -> Self {
         SkipList::with_capacity(66_000)
     }
     pub fn with_capacity(exp_cap: usize) -> Self {
         let levels = (exp_cap as f64).log2().floor() as usize;
         let head = RefCell::new(Head::new(None));
-        let generator = LevelGenerator::new(levels);
-
-        SkipList { head, levels, generator }
+        let generator = LevelGenerator::new();
+        let size = 0;
+        SkipList { head, levels, generator, size }
     }
     pub fn search(&self, key: &K) -> Option<V> {
         match &self.first() {
@@ -287,55 +245,54 @@ impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> SkipList<K, V
 
     pub fn insert(&mut self, key: K, val: V) -> Option<V> {
         if self.head.borrow().next.is_none() {
-            let mut curr_node = Node::new_with(key.clone(), val.clone(), self.levels);
-            &self.head.borrow_mut().try_upd_head(curr_node.clone());
-            let mut cur_lvl = self.levels - 1;
-
-            while cur_lvl > 0 {
-                let under_node = Node::new_with(key.clone(), val.clone(), cur_lvl);
-                Node::set_under_to_node(curr_node, under_node.clone());
-                curr_node = under_node.clone();
-                cur_lvl = cur_lvl - 1
-            }
+            let new_node = Node::new_in_list(
+                key, val, self.levels, None, &mut vec![]);
+            self.head.borrow_mut().try_upd_head(new_node);
+            self.inc_size();
             None
         } else {
             let first_node = self.first();
-            let mut curr_node = first_node.as_ref().unwrap().clone();
+            let mut curr = first_node.as_ref().unwrap().clone();
             let mut prev_step = PrevSearchStep::FromHead;
-            let mut path_stack: Vec<Rc<RefCell<Node<K, V>>>> = vec![];
+            let mut path: Vec<Rc<RefCell<Node<K, V>>>> = vec![];
             loop {
-                let cmp_with_curr_node = RefCell::borrow(&curr_node).compare(&key, &prev_step);
+                let cmp_with_curr_node = RefCell::borrow(&curr).compare(&key, &prev_step);
                 match cmp_with_curr_node {
                     Backward(prev) => {
-                        curr_node = prev.clone();
+                        curr = prev.clone();
                         prev_step = FromLeft;
                     }
                     Forward(next) => {
-                        curr_node = next.clone();
+                        curr = next.clone();
                         prev_step = FromLeft;
                     }
                     NotFound => {
-                        let lev = self.generator.random() + 1;
-                        let new_node = Node::create_in_list(
-                            key, val, lev, curr_node.clone(), &mut path_stack);
+                        let lev = self.generator.random(self.levels) + 1;
+                        let new_node =
+                            Node::new_in_list(key, val, lev, Some(curr.clone()), &mut path);
                         self.head.borrow_mut().try_upd_head(new_node);
+                        self.inc_size();
                         return None;
                     }
                     Down(under) => {
-                        path_stack.push(curr_node.clone());
-                        curr_node = under.clone();
+                        path.push(curr.clone());
+                        curr = under.clone();
                         prev_step = FromAbove;
                     }
                     Found(old_v) => {
-                        curr_node.borrow_mut().set_value(val);
+                        curr.borrow_mut().set_value(val);
                         return Some(old_v);
                     }
                 }
             }
         }
     }
-
-
+    fn inc_size(&mut self) {
+        self.size = self.size + 1
+    }
+    fn dec_size(&mut self) {
+        self.size = self.size - 1
+    }
     fn search_in(&self, node: Rc<RefCell<Node<K, V>>>, key: &K) -> Option<V> {
         let mut curr_node = node.clone();
         let mut prev_step = PrevSearchStep::FromHead;
@@ -359,45 +316,62 @@ impl<K: Ord + Clone + Debug + Display, V: Clone + Debug + Display> SkipList<K, V
     fn first(&self) -> Option<SkipNode<K, V>> {
         RefCell::borrow(&self.head).next.as_ref().map(|v| v.clone())
     }
+//    fn print_list(&self) {
+//        match &self.first() {
+//            Some(node) => {
+//                SkipList::print_level(node.clone());
+//                let mut under = RefCell::borrow(&node).under.clone();
+//                while under.is_some() {
+//                    let under_ = under.unwrap().clone();
+//                    SkipList::print_level(under_.clone());
+//                    under = RefCell::borrow(&under_).under.clone();
+//                }
+//            }
+//            None => println!("the list is empty")
+//        }
+//    }
+//    fn print_level(node: SkipNode<K, V>) {
+//        let mut first_node = node.clone();
+//        if RefCell::borrow(&node.clone()).prev.is_some() {
+//            let mut prev_node = RefCell::borrow(&node).prev.clone();
+//            while prev_node.is_some() {
+//                first_node = prev_node.clone().unwrap();
+//                prev_node = RefCell::borrow(&prev_node.unwrap()).prev.clone();
+//            }
+//        }
+//
+//        println!("level:{} ", RefCell::borrow(&node.clone()).level);
+//        print!("{} ", Node::node_to_string(first_node.clone()));
+//
+//        let mut next_node = RefCell::borrow(&first_node.clone()).next.clone();
+//
+//        while next_node.is_some() {
+//            print!(" => {} ", Node::node_to_string(next_node.as_ref().unwrap().clone()));
+//            next_node = RefCell::borrow(&next_node.unwrap()).next.clone();
+//        }
+//        println!("\n");
+//    }
+}
 
-    fn print_list(&self) {
-        match &self.first() {
-            Some(node) => {
-                SkipList::print_level(node.clone());
-                let mut under = RefCell::borrow(&node).under.clone();
-                while under.is_some() {
-                    let under_ = under.unwrap().clone();
-                    SkipList::print_level(under_.clone());
-                    under = RefCell::borrow(&under_).under.clone();
-                }
-            }
-            None => println!("list is empty")
-        }
-    }
-    fn print_level(node: SkipNode<K, V>) {
-        let mut first_node = node.clone();
-        let level = RefCell::borrow(&node.clone()).level;
-        if RefCell::borrow(&node.clone()).prev.is_some() {
-            let mut prev_node = RefCell::borrow(&node).prev.clone();
-            while prev_node.is_some() {
-                first_node = prev_node.clone().unwrap();
-                prev_node = RefCell::borrow(&prev_node.unwrap()).prev.clone();
-            }
-        }
+struct SkipListIterator<K: Ord + Clone, V: Clone> {
+    list: Rc<SkipList<K, V>>,
+    curr: Option<SkipNode<K, V>>,
+    under: Option<SkipNode<K, V>>,
+}
 
-        println!(" lev {} ", level);
-        print!("{} ", Node::node_to_string(first_node.clone()));
-
-        let mut next_node = RefCell::borrow(&first_node.clone()).next.clone();
-
-        while next_node.is_some() {
-            print!(", | {} ", Node::node_to_string(next_node.as_ref().unwrap().clone()));
-            next_node = RefCell::borrow(&next_node.unwrap()).next.clone();
-        }
-        println!("\n");
+impl<K: Ord + Clone, V: Clone> SkipListIterator<K, V> {
+    fn new(list: &SkipList<K, V>) -> Self {
+        SkipListIterator{}
     }
 }
 
+impl<K: Ord + Clone, V: Clone> Iterator for SkipListIterator<K, V> {
+    type Item = SkipNode<K, V>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        unimplemented!()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -409,14 +383,14 @@ mod tests {
         let mid = Node::new_with(20, 20, 1);
         let right = Node::new_with(30, 30, 1);
 
-        Node::connect(left.clone(), right.clone());
+        Node::connect_new(left.clone(), right.clone());
 
         let nl_k = left.borrow().next.as_ref().unwrap().clone().borrow().key;
         let pr_k = right.borrow().prev.as_ref().unwrap().clone().borrow().key;
         assert_eq!(nl_k, 30);
         assert_eq!(pr_k, 10);
 
-        Node::connect(right.clone(), mid.clone());
+        Node::connect_new(right.clone(), mid.clone());
 
         let l_n_k = left.borrow().next.as_ref().unwrap().clone().borrow().key;
         assert_eq!(l_n_k, 20);
@@ -444,7 +418,6 @@ mod tests {
         let _ = list.insert(1, 1);
         let _ = list.insert(200, 200);
         let _ = list.insert(80, 800);
-        list.print_list();
     }
 
 
@@ -489,7 +462,6 @@ mod tests {
         let opt = list.insert(10, 10);
         assert_eq!(opt.is_none(), true);
         assert_eq!(list.levels, 31);
-        println!(" {:?} ", list.head);
 
         let opt = list.insert(10, 100);
         assert_eq!(opt.is_none(), false);
@@ -498,9 +470,9 @@ mod tests {
 
     #[test]
     fn rand_test() {
-        let mut gen = LevelGenerator::new(16);
+        let mut gen = LevelGenerator::new();
         for _ in 0..100000 {
-            let i = gen.random();
+            let i = gen.random(16);
             assert_eq!(true, i >= 0)
         }
     }
