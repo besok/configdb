@@ -13,8 +13,6 @@ use crate::store::memory::skip_list::PrevSearchStep::FromAbove;
 use crate::store::memory::skip_list::PrevSearchStep::FromLeft;
 use crate::store::memory::skip_list::PrevSearchStep::FromHead;
 use std::cell::RefCell;
-use std::fmt::{Debug, Formatter, Error};
-use std::net::Shutdown::Read;
 
 
 type SkipNode<K: Ord + Clone, V: Clone> = Rc<RefCell<Node<K, V>>>;
@@ -216,6 +214,18 @@ impl<K: Ord + Clone, V: Clone> Node<K, V> {
             RefCell::borrow_mut(under).set_value(val.clone());
         }
     }
+
+    fn find_first(node: SkipNode<K, V>) -> SkipNode<K, V> {
+        let mut first_node = node.clone();
+        if RefCell::borrow(&node.clone()).prev.is_some() {
+            let mut prev_node = RefCell::borrow(&node).prev.clone();
+            while prev_node.is_some() {
+                first_node = prev_node.clone().unwrap();
+                prev_node = RefCell::borrow(&prev_node.unwrap()).prev.clone();
+            }
+        }
+        first_node.clone()
+    }
 }
 
 struct SkipList<K: Ord + Clone, V: Clone> {
@@ -243,6 +253,13 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
         }
     }
 
+    pub fn iter(&self) -> SkipListIterator<K, V> {
+        SkipListIterator::new(self)
+    }
+    pub fn iter_low_level(&self) -> SkipListDistinctIterator<K, V> {
+        SkipListDistinctIterator::new(self)
+    }
+
     pub fn insert(&mut self, key: K, val: V) -> Option<V> {
         if self.head.borrow().next.is_none() {
             let new_node = Node::new_in_list(
@@ -253,7 +270,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
         } else {
             let first_node = self.first();
             let mut curr = first_node.as_ref().unwrap().clone();
-            let mut prev_step = PrevSearchStep::FromHead;
+            let mut prev_step = FromHead;
             let mut path: Vec<Rc<RefCell<Node<K, V>>>> = vec![];
             loop {
                 let cmp_with_curr_node = RefCell::borrow(&curr).compare(&key, &prev_step);
@@ -287,6 +304,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
             }
         }
     }
+
     fn inc_size(&mut self) {
         self.size = self.size + 1
     }
@@ -295,7 +313,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     }
     fn search_in(&self, node: Rc<RefCell<Node<K, V>>>, key: &K) -> Option<V> {
         let mut curr_node = node.clone();
-        let mut prev_step = PrevSearchStep::FromHead;
+        let mut prev_step = FromHead;
         loop {
             match RefCell::borrow(&curr_node.clone()).compare(key, &prev_step) {
                 NotFound => return None,
@@ -316,52 +334,107 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     fn first(&self) -> Option<SkipNode<K, V>> {
         RefCell::borrow(&self.head).next.as_ref().map(|v| v.clone())
     }
-//    fn print_list(&self) {
-//        match &self.first() {
-//            Some(node) => {
-//                SkipList::print_level(node.clone());
-//                let mut under = RefCell::borrow(&node).under.clone();
-//                while under.is_some() {
-//                    let under_ = under.unwrap().clone();
-//                    SkipList::print_level(under_.clone());
-//                    under = RefCell::borrow(&under_).under.clone();
-//                }
-//            }
-//            None => println!("the list is empty")
-//        }
-//    }
-//    fn print_level(node: SkipNode<K, V>) {
-//        let mut first_node = node.clone();
-//        if RefCell::borrow(&node.clone()).prev.is_some() {
-//            let mut prev_node = RefCell::borrow(&node).prev.clone();
-//            while prev_node.is_some() {
-//                first_node = prev_node.clone().unwrap();
-//                prev_node = RefCell::borrow(&prev_node.unwrap()).prev.clone();
-//            }
-//        }
-//
-//        println!("level:{} ", RefCell::borrow(&node.clone()).level);
-//        print!("{} ", Node::node_to_string(first_node.clone()));
-//
-//        let mut next_node = RefCell::borrow(&first_node.clone()).next.clone();
-//
-//        while next_node.is_some() {
-//            print!(" => {} ", Node::node_to_string(next_node.as_ref().unwrap().clone()));
-//            next_node = RefCell::borrow(&next_node.unwrap()).next.clone();
-//        }
-//        println!("\n");
-//    }
 }
 
 struct SkipListIterator<K: Ord + Clone, V: Clone> {
-    list: Rc<SkipList<K, V>>,
+    size: usize,
     curr: Option<SkipNode<K, V>>,
-    under: Option<SkipNode<K, V>>,
+}
+
+struct SkipListDistinctIterator<K: Ord + Clone, V: Clone> {
+    size: usize,
+    curr: Option<SkipNode<K, V>>,
+}
+
+impl<K: Ord + Clone, V: Clone> SkipListDistinctIterator<K, V> {
+    fn new(list: &SkipList<K, V>) -> Self {
+        let size = list.size;
+        let curr = match &list.first() {
+            None => None,
+            Some(n) => {
+                let mut lower_node = n.clone();
+                while RefCell::borrow(&lower_node).under.is_some() {
+                    lower_node = RefCell::borrow(&lower_node.clone()).under.as_ref().unwrap().clone();
+                }
+                Some(Node::find_first(lower_node.clone()))
+            }
+        };
+
+        SkipListDistinctIterator { size, curr }
+    }
+
+    fn next_opt(&self) -> Option<SkipNode<K, V>> {
+        if self.curr.is_none() {
+            None
+        } else {
+            RefCell::borrow(self.curr.as_ref().unwrap())
+                .next.as_ref().map(|v| v.clone())
+        }
+    }
+}
+
+impl<K: Ord + Clone, V: Clone> Iterator for SkipListDistinctIterator<K, V> {
+    type Item = SkipNode<K, V>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match &self.next_opt() {
+            None => {
+                let old_curr = self.curr.clone();
+                self.curr = None;
+                old_curr
+            }
+            Some(n) => {
+                let old_curr = self.curr.clone();
+                self.curr = Some(n.clone());
+                old_curr
+            }
+        }
+    }
 }
 
 impl<K: Ord + Clone, V: Clone> SkipListIterator<K, V> {
+    fn get_under(node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
+        RefCell::borrow(&node).under.clone()
+    }
+
     fn new(list: &SkipList<K, V>) -> Self {
-        SkipListIterator{}
+        let size = list.size;
+        let curr = match &list.first() {
+            None => None,
+            Some(n) => {
+                let first_node = Node::find_first(n.clone());
+                Some(first_node.clone())
+            }
+        };
+
+        SkipListIterator { size, curr }
+    }
+
+    fn find_next(&self) -> Option<SkipNode<K, V>> {
+        RefCell::borrow(self.curr.as_ref().unwrap()).next.as_ref().map(|v| v.clone())
+    }
+
+    fn find_under(&self) -> Option<SkipNode<K, V>> {
+        RefCell::borrow(self.curr.as_ref().unwrap()).under.as_ref().map(|v| v.clone())
+    }
+
+    fn next_opt(&mut self) -> Option<SkipNode<K, V>> {
+        match &self.find_next() {
+            None => {
+                match &self.find_under() {
+                    None => None,
+                    Some(under) => {
+                        let first = Node::find_first(under.clone());
+                        self.curr = Some(first.clone());
+                        Some(first.clone())
+                    }
+                }
+            }
+            Some(next) => {
+                self.curr = Some(next.clone());
+                Some(next.clone())
+            }
+        }
     }
 }
 
@@ -369,7 +442,7 @@ impl<K: Ord + Clone, V: Clone> Iterator for SkipListIterator<K, V> {
     type Item = SkipNode<K, V>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        unimplemented!()
+        self.next_opt()
     }
 }
 
@@ -415,9 +488,16 @@ mod tests {
     #[test]
     fn print_test() {
         let mut list: SkipList<u64, u64> = SkipList::with_capacity(16);
-        let _ = list.insert(1, 1);
         let _ = list.insert(200, 200);
+        let _ = list.insert(1, 1);
         let _ = list.insert(80, 800);
+        let _ = list.insert(800, 800);
+        let _ = list.insert(8, 800);
+
+
+        for el in list.iter_low_level() {
+            println!("{} - {}", el.borrow().key, el.borrow().level)
+        }
     }
 
 
@@ -430,12 +510,14 @@ mod tests {
         let _ = list.insert(10, 10);
         let _ = list.insert(70, 70);
         let _ = list.insert(20, 2);
+        let _ = list.insert(800, 800);
 
 
         test_search(list.search(&200), 200);
         test_search(list.search(&20), 2);
         test_search(list.search(&1), 1);
         test_search(list.search(&80), 800);
+        test_search(list.search(&800), 800);
     }
 
     fn test_search(got_val: Option<u64>, exp_val: u64) {
