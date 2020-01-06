@@ -208,23 +208,23 @@ impl<K: Ord + Clone, V: Clone> Node<K, V> {
         }
     }
     fn delete(node: SkipNode<K, V>) {
+        let mut curr_lvl = RefCell::borrow(&node).level;
         let mut curr_node = Some(node.clone());
-        while curr_node.is_some() {
-            curr_node = Node::delete_in_level(curr_node.unwrap().clone())
-        }
-    }
-
-    fn delete_in_level(node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
-        match (Node::get_prev(node.clone()), Node::get_next(node.clone())) {
-            (None, None) => (),
-            (None, Some(n)) => n.borrow_mut().prev = None,
-            (Some(p), None) => p.borrow_mut().next = None,
-            (Some(p), Some(n)) => {
-                p.borrow_mut().next = Some(n.clone());
-                n.borrow_mut().prev = Some(p.clone());
+        while curr_lvl > 0 {
+            let under_curr_node = curr_node.as_ref().unwrap().clone();
+            match (Node::get_prev(under_curr_node.clone()),
+                   Node::get_next(under_curr_node.clone())) {
+                (None, None) => (),
+                (None, Some(n)) => RefCell::borrow_mut(&n).prev = None,
+                (Some(p), None) => RefCell::borrow_mut(&p).next = None,
+                (Some(p), Some(n)) => {
+                    RefCell::borrow_mut(&p).next = Some(n.clone());
+                    RefCell::borrow_mut(&n).prev = Some(p.clone());
+                }
             }
+            curr_node = Node::get_under(under_curr_node.clone());
+            curr_lvl -= 1;
         }
-        Node::get_under(node.clone())
     }
 
     fn connect_new(node: SkipNode<K, V>, new_node: SkipNode<K, V>) {
@@ -338,6 +338,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
             None => None,
             Some(f) => {
                 let first_b = RefCell::borrow(&f);
+                let res = Some(first_b.val.clone());
                 match first_b.key.partial_cmp(key) {
                     Some(Equal) => {
                         match &first_b.next {
@@ -346,9 +347,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                                 while under_opt.is_some() {
                                     let under = under_opt.as_ref().unwrap().clone();
                                     match (Node::get_prev(under.clone()), Node::get_next(under.clone())) {
-                                        (None, None) => {
-                                            under_opt = Node::get_under(under.clone());
-                                        }
+                                        (None, None) => under_opt = Node::get_under(under.clone()),
                                         (Some(n), _) | (None, Some(n)) => {
                                             let node_b = n.borrow();
 
@@ -361,21 +360,21 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                                             while cur_lvl <= self.levels {
                                                 top_node = Node::new_with(k.clone(), v.clone(), cur_lvl);
                                                 Node::set_under(top_node.clone(), under_node.clone());
+                                                cur_lvl += 1;
                                             }
                                             Node::delete(f.clone());
                                             self.head.borrow_mut().next = Some(top_node.clone());
+                                            return res;
                                         }
                                     }
                                 }
                                 self.head.borrow_mut().next = None;
-                                let v = first_b.val.clone();
-                                return Some(v);
+                                return res;
                             }
                             Some(next) => {
                                 self.head.borrow_mut().next = Some(next.clone());
-                                let v = first_b.val.clone();
                                 Node::delete(f.clone());
-                                return Some(v);
+                                return res;
                             }
                         }
                     }
@@ -383,13 +382,17 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                         let mut curr_node = f.clone();
                         let mut prev_step = FromHead;
                         loop {
-                            match RefCell::borrow(&curr_node.clone()).compare(key, &prev_step) {
+                            let cmp_res = RefCell::borrow(&curr_node.clone()).compare(key, &prev_step);
+                            match cmp_res {
                                 NotFound => return None,
-                                Backward(p) => curr_node = p.clone(),
+                                Backward(p) => {
+                                    curr_node = p.clone();
+                                    prev_step = FromLeft;
+                                }
                                 Found(v) => {
                                     Node::delete(curr_node.clone());
-                                    return Some(v)
-                                },
+                                    return Some(v);
+                                }
                                 Forward(n) => {
                                     curr_node = n.clone();
                                     prev_step = FromLeft;
@@ -400,7 +403,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                                 }
                             }
                         }
-                    },
+                    }
                 };
             }
         }
@@ -418,7 +421,10 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
         loop {
             match RefCell::borrow(&curr_node.clone()).compare(key, &prev_step) {
                 NotFound => return None,
-                Backward(p) => curr_node = p.clone(),
+                Backward(p) => {
+                    curr_node = p.clone();
+                    prev_step = FromLeft;
+                }
                 Found(v) => return Some(v),
                 Forward(n) => {
                     curr_node = n.clone();
@@ -642,30 +648,38 @@ mod tests {
     #[test]
     fn skip_list_delete_test() {
         let mut list: SkipList<u64, u64> = SkipList::with_capacity(16);
-        let _ = list.insert(200, 200);
         let _ = list.insert(1, 1);
+        let _ = list.insert(200, 200);
         let _ = list.insert(80, 800);
         let _ = list.insert(10, 10);
         let _ = list.insert(70, 70);
         let _ = list.insert(20, 2);
         let _ = list.insert(800, 800);
+        test_search(list.search(&200), 200);
+        test_search(list.delete(&200), 200);
+        test_search_not(list.search(&200));
 
-        let _ = list.delete(&200);
+        for i in 1000..10000{
+            list.insert(i,i);
+        }
+
+        for i in 1000..10000 {
+            println!("remove {}",i);
+            test_search(list.search(&i), i);
+            test_search(list.delete(&i), i);
+            test_search_not(list.search(&i));
+        }
 
 
-        test_search_not(list.search(&200), 200);
-        test_search(list.search(&20), 2);
-        test_search(list.search(&1), 1);
-        test_search(list.search(&80), 800);
-        test_search(list.search(&800), 800);
     }
 
     fn test_search(got_val: Option<u64>, exp_val: u64) {
         assert_eq!(got_val.is_some(), true);
         assert_eq!(got_val, Some(exp_val));
     }
-    fn test_search_not(got_val: Option<u64>, exp_val: u64) {
-        assert_ne!(got_val.is_some(), true);
+
+    fn test_search_not(got_val: Option<u64>) {
+        assert_eq!(got_val.is_none(), true);
     }
 
 
