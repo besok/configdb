@@ -212,19 +212,23 @@ impl<K: Ord + Clone, V: Clone> Node<K, V> {
         let mut curr_node = Some(node.clone());
         while curr_lvl > 0 {
             let under_curr_node = curr_node.as_ref().unwrap().clone();
-            match (Node::get_prev(under_curr_node.clone()),
-                   Node::get_next(under_curr_node.clone())) {
-                (None, None) => (),
-                (None, Some(n)) => RefCell::borrow_mut(&n).prev = None,
-                (Some(p), None) => RefCell::borrow_mut(&p).next = None,
-                (Some(p), Some(n)) => {
-                    RefCell::borrow_mut(&p).next = Some(n.clone());
-                    RefCell::borrow_mut(&n).prev = Some(p.clone());
-                }
-            }
-            curr_node = Node::get_under(under_curr_node.clone());
+            curr_node = Node::delete_level(under_curr_node);
             curr_lvl -= 1;
         }
+    }
+
+    fn delete_level(under_curr_node: SkipNode<K, V>) -> Option<SkipNode<K,V>>{
+        match (Node::get_prev(under_curr_node.clone()),
+               Node::get_next(under_curr_node.clone())) {
+            (None, None) => (),
+            (None, Some(n)) => RefCell::borrow_mut(&n).prev = None,
+            (Some(p), None) => RefCell::borrow_mut(&p).next = None,
+            (Some(p), Some(n)) => {
+                RefCell::borrow_mut(&p).next = Some(n.clone());
+                RefCell::borrow_mut(&n).prev = Some(p.clone());
+            }
+        }
+        Node::get_under(under_curr_node.clone())
     }
 
     fn connect_new(node: SkipNode<K, V>, new_node: SkipNode<K, V>) {
@@ -290,7 +294,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     pub fn insert(&mut self, key: K, val: V) -> Option<V> {
         if self.head.borrow().next.is_none() {
             let new_node = Node::new_in_list(
-                key, val, self.levels, None, &mut vec![]);
+                key, val, self.levels+1, None, &mut vec![]);
             self.head.borrow_mut().try_upd_head(new_node);
             self.inc_size();
             None
@@ -655,21 +659,10 @@ mod tests {
         let _ = list.insert(70, 70);
         let _ = list.insert(20, 2);
         let _ = list.insert(800, 800);
-        test_search(list.search(&200), 200);
-        test_search(list.delete(&200), 200);
-        test_search_not(list.search(&200));
 
-        for i in 1000..10000{
-            list.insert(i,i);
-        }
-
-        for i in 1000..10000 {
-            println!("remove {}",i);
-            test_search(list.search(&i), i);
-            test_search(list.delete(&i), i);
-            test_search_not(list.search(&i));
-        }
-
+        test_search(list.search(&1), 1);
+        test_search(list.delete(&1), 1);
+        test_search_not(list.search(&1));
 
     }
 
