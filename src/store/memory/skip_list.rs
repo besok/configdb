@@ -381,32 +381,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                             }
                         }
                     }
-                    _ => {
-                        let mut curr_node = f.clone();
-                        let mut prev_step = FromHead;
-                        loop {
-                            let cmp_res = RefCell::borrow(&curr_node.clone()).compare(key, &prev_step);
-                            match cmp_res {
-                                NotFound => return None,
-                                Backward(p) => {
-                                    curr_node = p.clone();
-                                    prev_step = FromLeft;
-                                }
-                                Found(v) => {
-                                    Node::delete(curr_node.clone());
-                                    return Some(v);
-                                }
-                                Forward(n) => {
-                                    curr_node = n.clone();
-                                    prev_step = FromLeft;
-                                }
-                                Down(n) => {
-                                    curr_node = n.clone();
-                                    prev_step = FromAbove;
-                                }
-                            }
-                        }
-                    }
+                    _ => return SkipList::delete_elem(key, f.clone())
                 };
             }
         }
@@ -440,7 +415,31 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
             }
         }
     }
-
+    fn delete_elem(key: &K, f: Rc<RefCell<Node<K, V>>>) -> Option<V> {
+        let mut curr_node = f.clone();
+        let mut prev_step = FromHead;
+        loop {
+            match RefCell::borrow(&curr_node.clone()).compare(key, &prev_step) {
+                NotFound => return None,
+                Backward(p) => {
+                    curr_node = p.clone();
+                    prev_step = FromLeft;
+                }
+                Found(v) => {
+                    Node::delete(curr_node.clone());
+                    return Some(v);
+                }
+                Forward(n) => {
+                    curr_node = n.clone();
+                    prev_step = FromLeft;
+                }
+                Down(n) => {
+                    curr_node = n.clone();
+                    prev_step = FromAbove;
+                }
+            }
+        }
+    }
     fn first(&self) -> Option<SkipNode<K, V>> {
         RefCell::borrow(&self.head).next.as_ref().map(|v| v.clone())
     }
