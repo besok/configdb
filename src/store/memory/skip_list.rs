@@ -217,7 +217,7 @@ impl<K: Ord + Clone, V: Clone> Node<K, V> {
         }
     }
 
-    fn delete_level(under_curr_node: SkipNode<K, V>) -> Option<SkipNode<K,V>>{
+    fn delete_level(under_curr_node: SkipNode<K, V>) -> Option<SkipNode<K, V>> {
         match (Node::get_prev(under_curr_node.clone()),
                Node::get_next(under_curr_node.clone())) {
             (None, None) => (),
@@ -294,7 +294,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     pub fn insert(&mut self, key: K, val: V) -> Option<V> {
         if self.head.borrow().next.is_none() {
             let new_node = Node::new_in_list(
-                key, val, self.levels+1, None, &mut vec![]);
+                key, val, self.levels + 1, None, &mut vec![]);
             self.head.borrow_mut().try_upd_head(new_node);
             self.inc_size();
             None
@@ -337,15 +337,14 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     }
 
     pub fn delete(&mut self, key: &K) -> Option<V> {
-        let first_node_opt = self.first();
-        match first_node_opt {
+        match self.first() {
             None => None,
             Some(f) => {
-                let first_b = RefCell::borrow(&f);
-                let res = Some(first_b.val.clone());
-                match first_b.key.partial_cmp(key) {
+                let first = RefCell::borrow(&f);
+                let res = Some(first.val.clone());
+                match first.key.partial_cmp(key) {
                     Some(Equal) => {
-                        match &first_b.next {
+                        match &first.next {
                             None => {
                                 let mut under_opt = Node::get_under(f.clone());
                                 while under_opt.is_some() {
@@ -353,20 +352,20 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                                     match (Node::get_prev(under.clone()), Node::get_next(under.clone())) {
                                         (None, None) => under_opt = Node::get_under(under.clone()),
                                         (Some(n), _) | (None, Some(n)) => {
+                                            Node::delete(f.clone());
                                             let node_b = n.borrow();
+                                            let k = node_b.key.clone();
+                                            let v = node_b.val.clone();
 
                                             let mut top_node = n.clone();
                                             let mut under_node = n.clone();
                                             let mut cur_lvl = node_b.level + 1;
-                                            let k = node_b.key.clone();
-                                            let v = node_b.val.clone();
 
                                             while cur_lvl <= self.levels {
                                                 top_node = Node::new_with(k.clone(), v.clone(), cur_lvl);
                                                 Node::set_under(top_node.clone(), under_node.clone());
                                                 cur_lvl += 1;
                                             }
-                                            Node::delete(f.clone());
                                             self.head.borrow_mut().next = Some(top_node.clone());
                                             return res;
                                         }
@@ -650,20 +649,25 @@ mod tests {
     }
 
     #[test]
-    fn skip_list_delete_test() {
+    fn skip_list_delete_one_test() {
         let mut list: SkipList<u64, u64> = SkipList::with_capacity(16);
         let _ = list.insert(1, 1);
         let _ = list.insert(200, 200);
-        let _ = list.insert(80, 800);
-        let _ = list.insert(10, 10);
-        let _ = list.insert(70, 70);
-        let _ = list.insert(20, 2);
-        let _ = list.insert(800, 800);
+
 
         test_search(list.search(&1), 1);
         test_search(list.delete(&1), 1);
         test_search_not(list.search(&1));
+    }
 
+    #[test]
+    fn skip_list_delete_empty_test() {
+        let mut list: SkipList<u64, u64> = SkipList::with_capacity(16);
+        let _ = list.insert(1, 1);
+
+        test_search(list.search(&1), 1);
+        test_search(list.delete(&1), 1);
+        test_search_not(list.search(&1));
     }
 
     fn test_search(got_val: Option<u64>, exp_val: u64) {
