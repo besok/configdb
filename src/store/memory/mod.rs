@@ -1,4 +1,4 @@
 //! This module contains memory implementation
-//! The common structure is skiplist fixed size
+//! The general structure is skiplist.
 
 pub mod skip_list;
