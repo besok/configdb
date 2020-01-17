@@ -78,7 +78,6 @@ impl<K: Ord + Clone, V: Clone> Head<K, V> {
     }
 }
 
-
 struct Node<K: Ord + Clone, V: Clone> {
     key: K,
     val: V,

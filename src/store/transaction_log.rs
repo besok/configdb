@@ -244,9 +244,7 @@ impl ToBytes for Index {
     }
 }
 
-pub trait FromBytes
-    where Self: Sized
-{
+pub trait FromBytes where Self: Sized {
     fn from_bytes(bytes: &[u8]) -> StoreResult<Self>;
 }
 
@@ -357,7 +355,6 @@ impl Index {
 
 #[derive(Debug, Clone)]
 pub struct LogError(pub String);
-
 
 impl From<std::io::Error> for LogError {
     fn from(e: Error) -> Self {
