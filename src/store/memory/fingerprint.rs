@@ -3,10 +3,6 @@ use crate::store::memory::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
 use rand::{Rng, RngCore};
 
-trait Fingerprint<T> {
-    fn fingerprint(self) -> Option<T>;
-}
-
 struct Polynomial {
     degrees: Vec<i64>
 }
@@ -100,23 +96,19 @@ impl Polynomial {
     fn empty() -> Self {
         Polynomial { degrees: vec![] }
     }
+}
+
+impl Polynomial {
     fn degree(&self) -> i64 {
         match self.degrees.first() {
             None => -1,
             Some(el) => el.clone() as i64
         }
     }
-
     fn degrees(&self) -> Vec<i64> {
         self.degrees.clone()
     }
 
-    fn add(&self, p: Polynomial) -> Self {
-        Polynomial::xor(self.clone(), p)
-    }
-    fn subtract(&self, p: Polynomial) -> Self {
-        Polynomial::xor(self.clone(), p)
-    }
     fn multiply(&self, p: Polynomial) -> Self {
         let mut degrees: Vec<i64> = vec![];
         for l in self.degrees() {
@@ -132,31 +124,21 @@ impl Polynomial {
         }
         Polynomial { degrees }
     }
-
-    fn and(&self, right_p: Polynomial) -> Self {
-        Polynomial {
-            degrees: { vec_retain_all(self.degrees(), right_p.degrees()) }
-        }
-    }
     fn or(&self, right_p: Polynomial) -> Self {
         Polynomial {
             degrees: { vec_add_all(self.degrees(), right_p.degrees()) }
         }
     }
 
-    fn mod_(&self, p: Polynomial) -> Self {
-        Polynomial::mod_op(self.clone(), p)
-    }
-
-    fn mod_op(left_p: Polynomial, right_p: Polynomial) -> Self {
-        let da = left_p.degree();
-        let db = right_p.degree();
-        let mut register = left_p.clone();
+    fn mod_p(&self, p: Polynomial) -> Self {
+        let da = self.degree();
+        let db = p.degree();
+        let mut register = self.clone();
         let mut i = da - db;
         while i >= 0 {
             let x = i + db;
             if register.degrees.contains(&x) {
-                register = Polynomial::xor(register.clone(), right_p.clone().shift_left(i))
+                register = Polynomial::xor(register.clone(), p.clone().shift_left(i))
             }
             i -= 1
         }
@@ -211,7 +193,7 @@ impl Polynomial {
         let p_x = Polynomial::from_u64(2);
         let p_m = Polynomial::mod_pow(p_x.clone(), self.clone(), x);
         let p = Polynomial::xor(p_m, p_x.clone());
-        p.mod_(self.clone())
+        p.mod_p(self.clone())
     }
     fn mod_pow(l: Polynomial, r: Polynomial, e: i64) -> Self {
         let mut res = Polynomial::from_u64(1);
@@ -220,10 +202,10 @@ impl Polynomial {
 
         while e.count_ones() != 0 {
             if e & (1 << 0) != 0 {
-                res = res.multiply(b.clone()).mod_(r.clone())
+                res = res.multiply(b.clone()).mod_p(r.clone())
             }
             e = e >> 1;
-            b = b.multiply(b.clone()).mod_(r.clone())
+            b = b.multiply(b.clone()).mod_p(r.clone())
         }
 
         res
@@ -233,7 +215,7 @@ impl Polynomial {
         let mut b = p_right.clone();
         while !b.degrees.is_empty() {
             let b_p = b.clone();
-            b = Polynomial::mod_op(a.clone(), b.clone());
+            b = a.clone().mod_p(b.clone());
             a = b_p;
         }
         return a.clone();
@@ -310,7 +292,7 @@ impl RabinFingerprint {
     fn push_byte(&mut self, byte: u8) {
         self.p = self.p.clone().shift_left(8)
             .or(Polynomial::from_u64((byte & 0xFF) as i64))
-            .mod_(self.base.clone());
+            .mod_p(self.base.clone());
     }
 
     fn fingerprint(&self) -> Polynomial {
@@ -319,7 +301,6 @@ impl RabinFingerprint {
     fn fingerprint_i64(&self) -> i64 {
         self.p.clone().to_i64()
     }
-
 }
 
 
