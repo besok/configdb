@@ -270,10 +270,29 @@ fn vec_retain_all<T: Ord + Clone>(src: Vec<T>, dst: Vec<T>) -> Vec<T> {
 }
 
 
+trait Fingerprint<T> {
+    fn calculate(&mut self, bytes: Vec<u8>) -> Option<T>;
+}
+
 struct RabinFingerprint {
     p: Polynomial,
     base: Polynomial,
+}
 
+
+impl Fingerprint<i64> for RabinFingerprint {
+    fn calculate(&mut self, bytes: Vec<u8>) -> Option<i64> {
+        <RabinFingerprint as Fingerprint<Polynomial>>::calculate(self, bytes).map(|p| p.to_i64())
+    }
+}
+
+impl Fingerprint<Polynomial> for RabinFingerprint {
+    fn calculate(&mut self, bytes: Vec<u8>) -> Option<Polynomial> {
+        for el in bytes {
+            self.push_byte(el)
+        }
+        Some(self.p.clone())
+    }
 }
 
 impl RabinFingerprint {
@@ -284,31 +303,72 @@ impl RabinFingerprint {
         RabinFingerprint::new(Polynomial::from_degree_ir(53))
     }
 
-    fn push_bytes(&mut self, bytes: Vec<u8>) {
-        for el in bytes {
-            self.push_byte(el)
-        }
-    }
     fn push_byte(&mut self, byte: u8) {
-        self.p = self.p.clone().shift_left(8)
+        self.p = self.p.clone()
+            .shift_left(8)
             .or(Polynomial::from_u64((byte & 0xFF) as i64))
             .mod_p(self.base.clone());
     }
+}
 
-    fn fingerprint(&self) -> Polynomial {
-        self.p.clone()
+struct NumRabinFingerprint {
+    shift: i64,
+    degree: i64,
+    table: [i64; 512],
+}
+
+impl NumRabinFingerprint {
+    pub fn new(base: Polynomial) -> Self {
+        let degree = base.degree();
+        let shift = degree - 8;
+        let table = {
+            let mut table = [0; 512];
+            for el in 0..512 {
+                let left = Polynomial::from_u64(el).shift_left(degree);
+                let md = left.mod_p(base.clone());
+                let res = Polynomial::xor(left, md);
+                table[el as usize] = res.to_i64()
+            }
+            table
+        };
+
+        NumRabinFingerprint {
+            degree,
+            shift,
+            table,
+        }
     }
-    fn fingerprint_i64(&self) -> i64 {
-        self.p.clone().to_i64()
+    pub fn new_degree(d: i32) -> Self {
+        NumRabinFingerprint::new(Polynomial::from_degree_ir(d))
     }
 }
 
+impl Fingerprint<i64> for NumRabinFingerprint {
+    fn calculate(&mut self, bytes: Vec<u8>) -> Option<i64> {
+        Some({
+            let mut f = 0;
+            for b in bytes {
+                let x = ((f >> self.shift) & 0x1FF);
+                f = ((f << 8) | (b & 0xFF) as i64) ^ self.table[x as usize]
+            }
+            f
+        })
+    }
+}
 
 #[cfg(test)]
 mod test {
-    use crate::store::memory::fingerprint::{Polynomial, vec_rem_all, RabinFingerprint};
+    use crate::store::memory::fingerprint::{Polynomial, vec_rem_all, RabinFingerprint, Fingerprint, NumRabinFingerprint};
     use crate::store::memory::fingerprint::Reducibility::IRREDUCIBLE;
 
+    #[test]
+    fn fingerprint_test() {
+        let mut f = NumRabinFingerprint::new_degree(53);
+        for _ in 1..100000 {
+            let rand = f.calculate(vec![1, 1, 10, 0, 127]);
+            assert_eq!(Some(4312399999), rand)
+        }
+    }
 
     #[test]
     fn reduce_test() {
@@ -346,14 +406,14 @@ mod test {
 
     #[test]
     fn s_test() {
-        let base = Polynomial::from_degree_ir(7);
+        let base = Polynomial { degrees: vec![7, 3, 0] };
         let mut f = RabinFingerprint::new(base);
 
 
-        f.push_bytes(vec![1, 1, 10, 0, 127]);
-        let p = f.fingerprint();
-        let dgr = p.degrees;
-        assert_eq!(dgr, vec![5, 3, 1, 0])
+        let p: i64 = f.calculate(vec![1, 1, 10, 0, 127]).unwrap();
+        let dgr = f.p.degrees;
+        assert_eq!(dgr, vec![5, 4, 1]);
+        assert_eq!(p, 50)
     }
 
     #[test]
