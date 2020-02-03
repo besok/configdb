@@ -3,8 +3,6 @@
 //! 2 major implementation:
 //! - rabin fingerprint (default)
 //! - fix rabin fingerpint (uses i64 and lookup tables to increase performance.)
-//!
-//!
 use lazy_static::lazy_static;
 use crate::store::memory::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
@@ -240,7 +238,6 @@ impl Clone for Polynomial {
     }
 }
 
-
 fn check_bit(bytes: &Vec<u8>, idx: usize) -> bool {
     let aidx = bytes.len() - 1 - (idx / 8);
     return
@@ -278,7 +275,6 @@ struct RabinFingerprint {
     p: Polynomial,
     base: Polynomial,
 }
-
 
 impl Fingerprint<i64> for RabinFingerprint {
     fn calculate(&mut self, bytes: Vec<u8>) -> Option<i64> {
