@@ -8,10 +8,22 @@ use crate::store::memory::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
 use rand::{Rng, RngCore};
 
-
-struct Polynomial {
+pub struct FixRabinFingerprint {
+    shift: i64,
+    degree: i64,
+    table: [i64; 512],
+}
+pub struct RabinFingerprint {
+    p: Polynomial,
+    base: Polynomial,
+}
+pub struct Polynomial {
     degrees: Vec<i64>
 }
+pub trait Fingerprint<T> {
+    fn calculate(&mut self, bytes: Vec<u8>) -> Option<T>;
+}
+
 
 enum Reducibility {
     REDUCIBLE,
@@ -44,18 +56,19 @@ impl PartialOrd for Polynomial {
 }
 
 impl Polynomial {
-    fn from_random(d: i32) -> Polynomial {
-        let r = d / 8 + 1;
-        let mut v = Vec::with_capacity(r as usize);
-
-        for _ in 0..r {
-            let random_number: u8 = rand::thread_rng().gen();
-            v.push(random_number)
+    pub fn from_u64(val: i64) -> Self {
+        Polynomial {
+            degrees: {
+                let mut vec: Vec<i64> = (0..64)
+                    .filter(|el| ((val >> el.clone()) & 1) == 1)
+                    .collect();
+                vec.sort_by(|a, b| a.cmp(b).reverse());
+                vec.dedup_by(|a, b| a == b);
+                vec
+            }
         }
-
-        Polynomial::from_bytes(v, d as i64)
     }
-    fn from_degree_irr(d: i32) -> Self {
+    pub fn from_degree_irr(d: i32) -> Self {
         loop {
             let p = Polynomial::from_random(d);
             if let IRREDUCIBLE = p.reducibility() {
@@ -63,7 +76,7 @@ impl Polynomial {
             }
         }
     }
-    fn from_bytes(bytes: Vec<u8>, degree: i64) -> Self {
+    pub fn from_bytes(bytes: Vec<u8>, degree: i64) -> Self {
         Polynomial {
             degrees: {
                 let mut vec: Vec<i64> = (0..degree)
@@ -86,24 +99,31 @@ impl Polynomial {
             }
         }
     }
-    fn from_u64(val: i64) -> Self {
-        Polynomial {
-            degrees: {
-                let mut vec: Vec<i64> = (0..64)
-                    .filter(|el| ((val >> el.clone()) & 1) == 1)
-                    .collect();
-                vec.sort_by(|a, b| a.cmp(b).reverse());
-                vec.dedup_by(|a, b| a == b);
-                vec
-            }
-        }
-    }
     fn empty() -> Self {
         Polynomial { degrees: vec![] }
+    }
+    fn from_random(d: i32) -> Polynomial {
+        let r = d / 8 + 1;
+        let mut v = Vec::with_capacity(r as usize);
+
+        for _ in 0..r {
+            let random_number: u8 = rand::thread_rng().gen();
+            v.push(random_number)
+        }
+
+        Polynomial::from_bytes(v, d as i64)
     }
 }
 
 impl Polynomial {
+    pub fn to_i64(&self) -> i64 {
+        let mut b = 0;
+        for el in self.degrees() {
+            b = b | (1 << el)
+        }
+        b
+    }
+
     fn degree(&self) -> i64 {
         match self.degrees.first() {
             None => -1,
@@ -221,13 +241,6 @@ impl Polynomial {
         }
         return a.clone();
     }
-    fn to_i64(&self) -> i64 {
-        let mut b = 0;
-        for el in self.degrees() {
-            b = b | (1 << el)
-        }
-        b
-    }
 }
 
 impl Clone for Polynomial {
@@ -267,14 +280,6 @@ fn vec_retain_all<T: Ord + Clone>(src: Vec<T>, dst: Vec<T>) -> Vec<T> {
 }
 
 
-trait Fingerprint<T> {
-    fn calculate(&mut self, bytes: Vec<u8>) -> Option<T>;
-}
-
-struct RabinFingerprint {
-    p: Polynomial,
-    base: Polynomial,
-}
 
 impl Fingerprint<i64> for RabinFingerprint {
     fn calculate(&mut self, bytes: Vec<u8>) -> Option<i64> {
@@ -305,12 +310,6 @@ impl RabinFingerprint {
             .or(Polynomial::from_u64((byte & 0xFF) as i64))
             .modulo(self.base.clone());
     }
-}
-
-struct FixRabinFingerprint {
-    shift: i64,
-    degree: i64,
-    table: [i64; 512],
 }
 
 impl FixRabinFingerprint {
