@@ -400,6 +400,14 @@ mod test {
     }
 
     #[test]
+    fn time_test(){
+        let mut fpr = RabinFingerprint::new_default();
+        for el in 1..10000{
+            let p: i64= fpr.calculate(vec![1,2,3]).unwrap();
+        }
+    }
+
+    #[test]
     fn s_test() {
         let base = Polynomial { degrees: vec![7, 3, 0] };
         let mut f = RabinFingerprint::new(base);
