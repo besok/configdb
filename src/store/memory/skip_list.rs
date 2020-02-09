@@ -20,7 +20,7 @@ use crate::store::memory::skip_list::PrevSearchStep::FromHead;
 use crate::store::memory::skip_list::PrevSearchStep::FromRight;
 use std::cell::RefCell;
 
-type SkipNode<K: Ord + Clone, V: Clone> = Rc<RefCell<Node<K, V>>>;
+type SkipNode<K, V> = Rc<RefCell<Node<K, V>>>;
 
 struct LevelGenerator {
     p: f64,
@@ -385,7 +385,7 @@ impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
                                             let v = node_b.val.clone();
 
                                             let mut top_node = n.clone();
-                                            let mut under_node = n.clone();
+                                            let under_node = n.clone();
                                             let mut cur_lvl = node_b.level + 1;
 
                                             while cur_lvl <= self.levels {

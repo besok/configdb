@@ -22,7 +22,7 @@
 //!
 use std::marker::PhantomData;
 use std::hash::{Hash, Hasher};
-use crate::store::memory::fingerprint::{Fingerprint, RabinFingerprint, Polynomial};
+use crate::store::memory::fingerprint::{Fingerprint, RabinFingerprint};
 use crate::store::transaction_log::ToBytes;
 use std::collections::hash_map::DefaultHasher;
 use rand::Rng;

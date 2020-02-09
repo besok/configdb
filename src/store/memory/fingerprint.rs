@@ -3,10 +3,9 @@
 //! 2 major implementation:
 //! - rabin fingerprint (default)
 //! - fix rabin fingerpint (uses i64 and lookup tables to increase performance.)
-use lazy_static::lazy_static;
 use crate::store::memory::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
-use rand::{Rng, RngCore};
+use rand::{Rng};
 
 pub struct FixRabinFingerprint {
     shift: i64,
@@ -352,7 +351,7 @@ impl Fingerprint<i64> for FixRabinFingerprint {
         Some({
             let mut f = 0;
             for b in bytes {
-                let x = ((f >> self.shift) & 0x1FF);
+                let x = (f >> self.shift) & 0x1FF;
                 f = ((f << 8) | (b & 0xFF) as i64) ^ self.table[x as usize]
             }
             f
