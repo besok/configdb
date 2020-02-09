@@ -141,8 +141,7 @@ impl Table {
                 idx
             }),
             None => InsertResult::Done({
-                self.delegate.insert(idx,
-                                     Bucket::new_with(v, self.bucket_cap));
+                self.delegate.insert(idx, Bucket::new_with(v, self.bucket_cap));
                 idx
             })
         }
