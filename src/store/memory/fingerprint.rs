@@ -13,13 +13,16 @@ pub struct FixRabinFingerprint {
     degree: i64,
     table: [i64; 512],
 }
+
 pub struct RabinFingerprint {
     p: Polynomial,
     base: Polynomial,
 }
+
 pub struct Polynomial {
     degrees: Vec<i64>
 }
+
 pub trait Fingerprint<T> {
     fn calculate(&mut self, bytes: Vec<u8>) -> Option<T>;
 }
@@ -113,6 +116,7 @@ impl Polynomial {
 
         Polynomial::from_bytes(v, d as i64)
     }
+
 }
 
 impl Polynomial {
@@ -280,7 +284,6 @@ fn vec_retain_all<T: Ord + Clone>(src: Vec<T>, dst: Vec<T>) -> Vec<T> {
 }
 
 
-
 impl Fingerprint<i64> for RabinFingerprint {
     fn calculate(&mut self, bytes: Vec<u8>) -> Option<i64> {
         <RabinFingerprint as Fingerprint<Polynomial>>::calculate(self, bytes).map(|p| p.to_i64())
@@ -292,7 +295,7 @@ impl Fingerprint<Polynomial> for RabinFingerprint {
         for el in bytes {
             self.push_byte(el)
         }
-        Some(self.p.clone())
+        Some(self.return_then_clean())
     }
 }
 
@@ -300,7 +303,7 @@ impl RabinFingerprint {
     pub fn new(base: Polynomial) -> Self {
         RabinFingerprint { p: Polynomial::empty(), base }
     }
-    pub fn new_default() -> Self {
+    pub fn default() -> Self {
         RabinFingerprint::new(Polynomial::from_degree_irr(53))
     }
 
@@ -309,6 +312,12 @@ impl RabinFingerprint {
             .shift_left(8)
             .or(Polynomial::from_u64((byte & 0xFF) as i64))
             .modulo(self.base.clone());
+    }
+
+    fn return_then_clean(&mut self) -> Polynomial{
+        let p = self.p.clone();
+        self.p = Polynomial::empty();
+        p
     }
 }
 
@@ -400,10 +409,10 @@ mod test {
     }
 
     #[test]
-    fn time_test(){
-        let mut fpr = RabinFingerprint::new_default();
-        for el in 1..10000{
-            let p: i64= fpr.calculate(vec![1,2,3]).unwrap();
+    fn time_test() {
+        let mut fpr = RabinFingerprint::default();
+        for el in 1..10000 {
+            let p: i64 = fpr.calculate(vec![1, 2, 3]).unwrap();
         }
     }
 
@@ -438,6 +447,17 @@ mod test {
 
         assert_eq!(vec_rem_all(vec1.clone(), vec2.clone()), vec![4, 5]);
         assert_eq!(vec_rem_all(vec2.clone(), vec1.clone()), vec![])
+    }
+
+    #[test]
+    fn check_idempotent_test() {
+        let base = Polynomial { degrees: vec![7, 3, 0] };
+        let mut f = RabinFingerprint::new(base);
+
+        let res: i64 = f.calculate(vec![1, 2, 3]).unwrap();
+        assert_eq!(res, 49);
+        let res: i64 = f.calculate(vec![1, 2, 3]).unwrap();
+        assert_eq!(res, 49);
     }
 
     #[test]
