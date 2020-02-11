@@ -266,7 +266,7 @@ impl<K: Ord + Clone, V: Clone> Node<K, V> {
     }
 }
 
-struct SkipList<K: Ord + Clone, V: Clone> {
+pub struct SkipList<K: Ord + Clone, V: Clone> {
     head: RefCell<Head<K, V>>,
     levels: usize,
     size: usize,

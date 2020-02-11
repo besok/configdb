@@ -6,3 +6,4 @@
 pub mod skip_list;
 pub mod cuckoo_filter;
 pub mod fingerprint;
+pub mod memtable;
