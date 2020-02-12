@@ -276,7 +276,7 @@ pub struct SkipList<K: Ord + Clone, V: Clone> {
 impl<K: Ord + Clone, V: Clone> SkipList<K, V> {
     /// new empty skiplist with default capacity = 66_0000 = 16 levels
     pub fn new() -> Self {
-        SkipList::with_capacity(66_000)
+        SkipList::with_capacity(2 << 16)
     }
 
     /// new empty list with selected capacity
