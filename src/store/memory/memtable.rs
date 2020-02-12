@@ -67,7 +67,14 @@ impl<K, V> MemTable<K, V> where K: Ord + Clone + Hash + ToBytes,
             return self.drop_to_store();
         }
 
-        Result(MemTableResult::Ok)
+        Ok(MemTableResult::Ok)
+    }
+
+    pub fn find(&self, key:&K) -> Option<V>{
+        None
+    }
+    pub fn remove(&mut self, key:&K) -> StoreResult<MemTableResult> {
+        Ok(MemTableResult::Ok)
     }
 
     fn is_limit(&self) -> bool {
@@ -77,7 +84,7 @@ impl<K, V> MemTable<K, V> where K: Ord + Clone + Hash + ToBytes,
     fn drop_to_store(&mut self) -> StoreResult<MemTableResult> {
         self.data.clear();
         self.size_bytes = 0;
-        Result(MemTableResult::Full)
+        Ok(MemTableResult::Full)
     }
 }
 
