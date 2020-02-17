@@ -55,17 +55,17 @@ impl<K, V> MemTable<K, V> where K: Ord + Clone + Hash + ToBytes,
     }
 
     pub fn add(&mut self, key: K, value: V) -> StoreResult<MemTableResult> {
-        if let Some(v) = self.data.insert(key, value) {
-            self.size_bytes -= v.to_bytes().len();
-            self.size_bytes -= key.to_bytes().len();
-        }
-
-        self.size_bytes += key.to_bytes().len();
-        self.size_bytes += value.to_bytes().len();
-
-        if self.is_limit() {
-            return self.drop_to_store();
-        }
+//        if let Some(v) = self.data.insert(key, value) {
+//            self.size_bytes -= v.to_bytes().len();
+//            self.size_bytes -= key.to_bytes().len();
+//        }
+//
+//        self.size_bytes += key.to_bytes().len();
+//        self.size_bytes += value.to_bytes().len();
+//
+//        if self.is_limit() {
+//            return self.drop_to_store();
+//        }
 
         Ok(MemTableResult::Ok)
     }

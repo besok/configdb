@@ -34,7 +34,7 @@ struct Bucket {
 }
 
 #[derive(Debug)]
-enum InsertResult {
+pub enum InsertResult {
     Done(usize),
     Full,
     Fail(String),
@@ -148,7 +148,7 @@ impl Table {
     }
 }
 
-struct CuckooFilter<T: Hash + ToBytes> {
+pub struct CuckooFilter<T: Hash + ToBytes> {
     table: Table,
     fpr: RabinFingerprint,
     load_factor: f32,
@@ -216,7 +216,9 @@ impl<T: Hash + ToBytes> CuckooFilter<T> {
             r @ _ => r
         }
     }
-
+    pub fn cap(&self) -> usize {
+        self.table.len() * self.table.bucket_cap
+    }
     pub fn contains(&mut self, val: &T) -> bool {
         let fpr: i64 = self.fpr.calculate(val.to_bytes())
             .expect("impossible to calculate the polynomial.");
