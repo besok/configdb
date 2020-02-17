@@ -48,10 +48,7 @@ impl<T> FilterHandler<T> where T: Hash + ToBytes {
                     r @ InsertResult::Done(_) |
                     r @ InsertResult::Fail(_) => r,
                     InsertResult::Full => {
-                        let new_cap = f.delegate.cap() * 2;
-                        let new_filter = Filter::new(index, new_cap);
-                        self.filters.insert(index, new_filter);
-
+                        self.init_filter(index,f.delegate.cap() * 2);
                         self.add_to_filter(index, key)
                     }
                 }
