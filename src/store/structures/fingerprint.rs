@@ -3,7 +3,7 @@
 //! 2 major implementation:
 //! - rabin fingerprint (default)
 //! - fix rabin fingerpint (uses i64 and lookup tables to increase performance.)
-use crate::store::memory::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
+use crate::store::structures::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
 use rand::{Rng};
 
@@ -361,8 +361,8 @@ impl Fingerprint<i64> for FixRabinFingerprint {
 
 #[cfg(test)]
 mod test {
-    use crate::store::memory::fingerprint::{Polynomial, vec_rem_all, RabinFingerprint, Fingerprint, FixRabinFingerprint};
-    use crate::store::memory::fingerprint::Reducibility::IRREDUCIBLE;
+    use crate::store::structures::fingerprint::{Polynomial, vec_rem_all, RabinFingerprint, Fingerprint, FixRabinFingerprint};
+    use crate::store::structures::fingerprint::Reducibility::IRREDUCIBLE;
 
     #[test]
     fn fingerprint_test() {

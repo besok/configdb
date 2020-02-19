@@ -10,14 +10,14 @@ use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;
 use std::cmp::Ordering::Greater;
 use std::cmp::Ordering::Less;
-use crate::store::memory::skip_list::SearchResult::{NotFound, Backward};
-use crate::store::memory::skip_list::SearchResult::Down;
-use crate::store::memory::skip_list::SearchResult::Forward;
-use crate::store::memory::skip_list::SearchResult::Found;
-use crate::store::memory::skip_list::PrevSearchStep::FromAbove;
-use crate::store::memory::skip_list::PrevSearchStep::FromLeft;
-use crate::store::memory::skip_list::PrevSearchStep::FromHead;
-use crate::store::memory::skip_list::PrevSearchStep::FromRight;
+use crate::store::structures::skip_list::SearchResult::{NotFound, Backward};
+use crate::store::structures::skip_list::SearchResult::Down;
+use crate::store::structures::skip_list::SearchResult::Forward;
+use crate::store::structures::skip_list::SearchResult::Found;
+use crate::store::structures::skip_list::PrevSearchStep::FromAbove;
+use crate::store::structures::skip_list::PrevSearchStep::FromLeft;
+use crate::store::structures::skip_list::PrevSearchStep::FromHead;
+use crate::store::structures::skip_list::PrevSearchStep::FromRight;
 use std::cell::RefCell;
 
 type SkipNode<K, V> = Rc<RefCell<Node<K, V>>>;
@@ -617,7 +617,7 @@ impl<K: Ord + Clone, V: Clone> Iterator for SkipListIterator<K, V> {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::memory::skip_list::{Node, LevelGenerator, SkipList};
+    use crate::store::structures::skip_list::{Node, LevelGenerator, SkipList};
 
     #[test]
     fn connect_node_test() {

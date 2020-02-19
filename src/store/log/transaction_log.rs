@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::store::files::*;
 use std::io;
 use std::fs::{File, remove_file};
+use crate::store::{ToBytes, FromBytes, StoreResult, StoreError};
 
 
 static LOCK_FILE: &str = "log.lock";
@@ -12,7 +13,6 @@ static IDX_FILE_NAME: &str = "log_idx.cfgdb";
 static LOG_FILE_NAME: &str = "log_data.cfgdb";
 static BACKUP_EXT: &str = "cfgdb.bck";
 
-pub type StoreResult<K> = Result<K, LogError>;
 
 /// default struct including into itself index and log
 #[derive(Debug)]
@@ -70,7 +70,7 @@ impl TransactionLog {
         let dir = {
             let dir = PathBuf::from(dir_str);
             if dir.is_file() {
-                return Err(LogError(String::from(" err in dir.is_file() || !dir.exists()")));
+                return Err(StoreError(String::from(" err in dir.is_file() || !dir.exists()")));
             }
             if !dir.exists() {
                 std::fs::create_dir_all(dir.as_path())?;
@@ -83,7 +83,7 @@ impl TransactionLog {
                 let mut lock = PathBuf::from(dir.clone());
                 lock.push(LOCK_FILE);
                 if lock.exists() {
-                    return Err(LogError(String::from(format!("lock file for {} exists", dir_str))));
+                    return Err(StoreError(String::from(format!("lock file for {} exists", dir_str))));
                 }
 
                 File::create(lock.as_path())?;
@@ -107,7 +107,7 @@ impl TransactionLog {
         let idx = &self.idx;
         let log = &self.log;
         if !idx.exists() || !log.exists() {
-            return Err(LogError(String::from(" error in !idx.exists() || !log.exists()")));
+            return Err(StoreError(String::from(" error in !idx.exists() || !log.exists()")));
         }
 
         let mut idx_bk = PathBuf::from(idx);
@@ -129,7 +129,7 @@ impl TransactionLog {
     /// read list of records from the end according a position
     /// # Arguments
     ///* `number_from_end` the position relative to the end. Should be more or equal 1
-    /// Can return `LogError` if number less 1
+    /// Can return `StoreError` if number less 1
     pub fn read_all_from_end(&self, number_from_end: usize) -> StoreResult<Vec<Record>> {
         let mut r_start_pos = 0;
         let mut r_number: u64;
@@ -156,7 +156,7 @@ impl TransactionLog {
     /// read record from the end according a position
     /// # Arguments
     ///* `number_from_end` the position relative to the end. Should be more or equal 1
-    /// Can return `LogError` if number less 1
+    /// Can return `StoreError` if number less 1
     pub fn read_from_end(&self, pos_from_end: usize) -> StoreResult<Record> {
         let mut r_start_pos = 0;
         let mut r_number: u64 = 0;
@@ -173,7 +173,7 @@ impl TransactionLog {
         }
 
         if r_number == 0 {
-            return Err(LogError(String::from(" error is r number == 0 ")));
+            return Err(StoreError(String::from(" error is r number == 0 ")));
         }
         read_slice_from_end::<Record>(self.log.as_path(), r_start_pos, r_number)
     }
@@ -204,10 +204,6 @@ pub struct Record {
     val_len: u32,
     key: Vec<u8>,
     val: Vec<u8>,
-}
-
-pub trait ToBytes {
-    fn to_bytes(&self) -> Vec<u8>;
 }
 
 impl ToBytes for Record {
@@ -244,10 +240,6 @@ impl ToBytes for Index {
     }
 }
 
-pub trait FromBytes where Self: Sized {
-    fn from_bytes(bytes: &[u8]) -> StoreResult<Self>;
-}
-
 impl FromBytes for Record {
     /// deserializer op
     /// # Arguments
@@ -262,10 +254,10 @@ impl FromBytes for Record {
     /// - then val array
     ///
     /// # Returns
-    /// `Result` with Record or `LogError`
+    /// `Result` with Record or `StoreError`
     fn from_bytes(bytes: &[u8]) -> StoreResult<Record> {
         if bytes.is_empty() {
-            return Err(LogError(String::from(" bytes are empty")));
+            return Err(StoreError(String::from(" bytes are empty")));
         }
 
         let operation: RecordType = match bytes.get(0) {
@@ -353,12 +345,10 @@ impl Index {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct LogError(pub String);
 
-impl From<std::io::Error> for LogError {
+impl From<std::io::Error> for StoreError {
     fn from(e: Error) -> Self {
-        LogError(e.to_string())
+        StoreError(e.to_string())
     }
 }
 
@@ -387,7 +377,8 @@ fn convert_to_fixed(bytes: &[u8]) -> &[u8; 4] {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::transaction_log::{Index, Record, RecordType, FromBytes, ToBytes, TransactionLog, time_now_millis};
+    use crate::store::log::transaction_log::{Index, Record, RecordType, TransactionLog, time_now_millis};
+    use crate::store::{FromBytes, ToBytes};
 
 
     #[test]

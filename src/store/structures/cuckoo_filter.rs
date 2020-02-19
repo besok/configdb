@@ -22,10 +22,10 @@
 //!
 use std::marker::PhantomData;
 use std::hash::{Hash, Hasher};
-use crate::store::memory::fingerprint::{Fingerprint, RabinFingerprint};
-use crate::store::transaction_log::ToBytes;
 use std::collections::hash_map::DefaultHasher;
 use rand::Rng;
+use crate::store::structures::fingerprint::{RabinFingerprint, Fingerprint};
+use crate::store::ToBytes;
 
 struct Bucket {
     base: Vec<Option<i64>>,
@@ -253,8 +253,8 @@ fn find_hash<T: Hash>(entity: &T) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::store::memory::cuckoo_filter::{CuckooFilter, Bucket, find_hash, InsertResult};
-    use crate::store::transaction_log::ToBytes;
+    use crate::store::structures::cuckoo_filter::{Bucket, CuckooFilter, InsertResult, find_hash};
+    use crate::store::ToBytes;
 
     impl ToBytes for i64 {
         fn to_bytes(&self) -> Vec<u8> {
