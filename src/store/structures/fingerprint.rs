@@ -5,7 +5,8 @@
 //! - fix rabin fingerpint (uses i64 and lookup tables to increase performance.)
 use crate::store::structures::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
-use rand::{Rng};
+use rand::Rng;
+use crate::store::ToBytes;
 
 pub struct FixRabinFingerprint {
     shift: i64,
@@ -20,6 +21,18 @@ pub struct RabinFingerprint {
 
 pub struct Polynomial {
     degrees: Vec<i64>
+}
+
+impl ToBytes for Polynomial {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.degrees.iter().flat_map(|el| el.to_bytes()).collect()
+    }
+}
+
+impl ToBytes for i64 {
+    fn to_bytes(&self) -> Vec<u8> {
+        self.to_le_bytes().to_vec()
+    }
 }
 
 pub trait Fingerprint<T> {
@@ -115,7 +128,6 @@ impl Polynomial {
 
         Polynomial::from_bytes(v, d as i64)
     }
-
 }
 
 impl Polynomial {
@@ -313,7 +325,7 @@ impl RabinFingerprint {
             .modulo(self.base.clone());
     }
 
-    fn return_then_clean(&mut self) -> Polynomial{
+    fn return_then_clean(&mut self) -> Polynomial {
         let p = self.p.clone();
         self.p = Polynomial::empty();
         p
@@ -363,6 +375,15 @@ impl Fingerprint<i64> for FixRabinFingerprint {
 mod test {
     use crate::store::structures::fingerprint::{Polynomial, vec_rem_all, RabinFingerprint, Fingerprint, FixRabinFingerprint};
     use crate::store::structures::fingerprint::Reducibility::IRREDUCIBLE;
+    use crate::store::ToBytes;
+
+
+    #[test]
+    fn polynomial_to_bytes_test(){
+        let x = Polynomial{degrees:vec![1,20000,3]};
+        let vec = x.to_bytes();
+        assert_eq!(vec,vec![1, 0, 0, 0, 0, 0, 0, 0, 32, 78, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0]);
+    }
 
     #[test]
     fn fingerprint_test() {

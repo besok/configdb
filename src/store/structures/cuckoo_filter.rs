@@ -256,11 +256,6 @@ mod tests {
     use crate::store::structures::cuckoo_filter::{Bucket, CuckooFilter, InsertResult, find_hash};
     use crate::store::ToBytes;
 
-    impl ToBytes for i64 {
-        fn to_bytes(&self) -> Vec<u8> {
-            self.to_be_bytes().to_vec()
-        }
-    }
 
     impl ToBytes for i32 {
         fn to_bytes(&self) -> Vec<u8> {
