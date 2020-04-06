@@ -6,7 +6,7 @@
 use crate::store::structures::fingerprint::Reducibility::{REDUCIBLE, IRREDUCIBLE};
 use std::cmp::Ordering;
 use rand::Rng;
-use crate::store::ToBytes;
+use crate::store::{ToBytes, FromBytes, StoreError};
 
 pub struct FixRabinFingerprint {
     shift: i64,
@@ -19,6 +19,13 @@ pub struct RabinFingerprint {
     base: Polynomial,
 }
 
+
+impl ToBytes for RabinFingerprint{
+    fn to_bytes(&self) -> Vec<u8> {
+        unimplemented!()
+    }
+}
+
 pub struct Polynomial {
     degrees: Vec<i64>
 }
@@ -29,9 +36,31 @@ impl ToBytes for Polynomial {
     }
 }
 
+impl FromBytes for Polynomial {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, StoreError> {
+        Ok(Polynomial {
+            degrees: bytes
+                .chunks(8)
+                .map(|v| { i64::from_bytes(v).unwrap()})
+                .collect()
+        })
+    }
+}
+
 impl ToBytes for i64 {
     fn to_bytes(&self) -> Vec<u8> {
         self.to_le_bytes().to_vec()
+    }
+}
+
+impl FromBytes for i64 {
+    fn from_bytes(bytes: &[u8]) -> Result<Self, StoreError> {
+        if bytes.len() != 8 {
+            return Err(StoreError(String::from("the bytes array should be corresponded to long = 8 ")))
+        }
+        let mut bts = [0; 8];
+        bts.copy_from_slice(bytes);
+        Ok(i64::from_ne_bytes(bts))
     }
 }
 
@@ -91,7 +120,7 @@ impl Polynomial {
             }
         }
     }
-    pub fn from_bytes(bytes: Vec<u8>, degree: i64) -> Self {
+    pub fn from_vec(bytes: Vec<u8>, degree: i64) -> Self {
         Polynomial {
             degrees: {
                 let mut vec: Vec<i64> = (0..degree)
@@ -126,7 +155,7 @@ impl Polynomial {
             v.push(random_number)
         }
 
-        Polynomial::from_bytes(v, d as i64)
+        Polynomial::from_vec(v, d as i64)
     }
 }
 
@@ -375,14 +404,28 @@ impl Fingerprint<i64> for FixRabinFingerprint {
 mod test {
     use crate::store::structures::fingerprint::{Polynomial, vec_rem_all, RabinFingerprint, Fingerprint, FixRabinFingerprint};
     use crate::store::structures::fingerprint::Reducibility::IRREDUCIBLE;
-    use crate::store::ToBytes;
+    use crate::store::{ToBytes, FromBytes};
 
 
     #[test]
-    fn polynomial_to_bytes_test(){
-        let x = Polynomial{degrees:vec![1,20000,3]};
+    fn i64_from_bytes_test() {
+        let el: i64 = 1001;
+        let vec = ToBytes::to_bytes(&el);
+        let result = i64::from_bytes(&vec);
+        assert_eq!(result.is_ok(), true);
+        assert_eq!(result.unwrap(), el);
+    }
+
+    #[test]
+    fn polynomial_to_from__bytes_test() {
+        let x = Polynomial { degrees: vec![1, 20000, 3] };
         let vec = x.to_bytes();
-        assert_eq!(vec,vec![1, 0, 0, 0, 0, 0, 0, 0, 32, 78, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(vec, vec![1, 0, 0, 0, 0, 0, 0, 0, 32, 78, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0]);
+
+        let exp = <Polynomial as FromBytes>::from_bytes(vec.as_slice());
+        assert_eq!(exp.is_ok(),true);
+        assert_eq!(x.degrees,exp.unwrap().degrees);
+
     }
 
     #[test]
@@ -482,7 +525,7 @@ mod test {
 
     #[test]
     fn check_bit_test() {
-        let p = Polynomial::from_bytes(vec![1, 2, 3, 4], 10);
+        let p = Polynomial::from_vec(vec![1, 2, 3, 4], 10);
         assert_eq!(p.degrees, vec![10, 9, 8, 2]);
 
         let p = Polynomial::from_u64(0x53);
